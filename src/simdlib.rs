@@ -48,22 +48,16 @@ impl f32x4 {
 impl PartialEq for f32x4 {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            println!("{:?}", self);
-            println!("{:?}", other);
             let elementwise_result = _mm_cmpeq_ps(self.data, other.data);
-            println!("{:?}", elementwise_result);
-
             let b_b_d_d = _mm_movehdup_ps(elementwise_result);
-            println!("{:?}", b_b_d_d);
             let ab_2b_cd_2d = _mm_and_ps(elementwise_result, b_b_d_d);
-            println!("{:?}", ab_2b_cd_2d);
             let cd_2d_d_d = _mm_movehl_ps(b_b_d_d, ab_2b_cd_2d);
-            println!("{:?}", cd_2d_d_d);
             let abcd_rest = _mm_and_ps(ab_2b_cd_2d, cd_2d_d_d);
-            println!("{:?}", abcd_rest);
             let reduced_eq = _mm_cvtss_si32(abcd_rest);
-            println!("{}", reduced_eq);
-            reduced_eq == 0
+            // The only possibilities are that this is zero (neq), or 0xFFFFFFFF.
+            // I'm not sure the best way to compare 0xFFFFFFFF as i32 so I'll just
+            // compare to neq 0.
+            reduced_eq != 0
         }
     }
 }
@@ -78,11 +72,21 @@ impl f32x8 {
     }
 }
 
+impl PartialEq for f32x8 {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe {
+            let self_low:   f32x4 = f32x4::new(_mm256_castps256_ps128(self.data));
+            let self_high:  f32x4 = f32x4::new(_mm256_extractf128_ps(self.data, 1));
+            let other_low:  f32x4 = f32x4::new(_mm256_castps256_ps128(other.data));
+            let other_high: f32x4 = f32x4::new(_mm256_extractf128_ps(other.data, 1));
+            return (self_low == other_low) && (self_high == other_high)
+        }
+    }
+}
 
-
+impl Eq for f32x8 {}
 
 //type f32x16 = __m512;
-
 //type h32x16 = __m256bh;
 //type h32x32 = __m512bh;
 
