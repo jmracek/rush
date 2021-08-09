@@ -139,9 +139,11 @@ impl f32x8 {
         unsafe {
             f32x8::new(_mm256_set_ps(s, t, u, v, w, x, y, z))
         }
-    }
-    
-    fn zero() -> Self {
+    }    
+}
+
+impl Default for f32x8 {
+    fn default() -> Self {
         unsafe {
             f32x8::new(_mm256_setzero_ps())
         }
@@ -188,7 +190,7 @@ Questions:
 2. How do I want to switch between different instruction sets?
 */
 
-trait SimdVec { } 
+trait SimdVec  { } 
 
 #[derive(Debug)]
 struct SimdVecImpl<T: Copy+Default+Sized, const MMBLOCKS: usize> {
@@ -217,8 +219,7 @@ impl<'a, T: Copy+Default, const MMBLOCKS: usize> Iterator for SimdVecImplIterato
 impl<T: Copy+Default, const MMBLOCKS: usize> SimdVec for SimdVecImpl<T, MMBLOCKS> {}
 
 impl<T: Copy+Default, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> {
-    
-    fn new() -> Self {
+    fn new() -> Self where Self: Sized {
         let mut chunks: [T; MMBLOCKS] = [T::default(); MMBLOCKS];
         SimdVecImpl::<T, MMBLOCKS> {
             chunks 
@@ -303,18 +304,19 @@ pub struct SimdVector {
     vector: Box<dyn SimdVec>,
     dim: usize
 }
-struct SimdError(String);
+
+pub struct SimdError(String);
 
 impl SimdVector {
     pub fn new(dim: usize) -> Result<SimdVector, SimdError> {
-        let vector = match dim {
-            0..=32       => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 4>::new())),
-            33..=128     => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 16>::new())),
-            129..=512    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 64>::new())),
-            512..=768    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 96>::new())),
-            769..=1024   => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 128>::new())),
-            1025..=2048  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 256>::new())),
-            2049..=4096  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 512>::new())),
+        let vector: Option<Box<dyn SimdVec>> = match dim {
+            0..=32       => Some(Box::new(SimdVecImpl::<f32x8, 4>::new())),
+            33..=128     => Some(Box::new(SimdVecImpl::<f32x8, 16>::new())),
+            129..=512    => Some(Box::new(SimdVecImpl::<f32x8, 64>::new())),
+            513..=768    => Some(Box::new(SimdVecImpl::<f32x8, 96>::new())),
+            769..=1024   => Some(Box::new(SimdVecImpl::<f32x8, 128>::new())),
+            1025..=2048  => Some(Box::new(SimdVecImpl::<f32x8, 256>::new())),
+            2049..=4096  => Some(Box::new(SimdVecImpl::<f32x8, 512>::new())),
             _ => None 
         };
 
