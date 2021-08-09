@@ -4,6 +4,7 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+use std::default::Default;
 use std::cmp::{PartialEq, Eq};
 use core::ops::{Add, Sub, Div, Mul, AddAssign};
 use std::iter::{FromIterator, Iterator};
@@ -23,21 +24,6 @@ impl SimdType for __m256 {
     type ElementType = f32; 
     const LANES: usize = 8;
 }
-
-/*
-pub trait SimdOps: Sized+Eq {
-    type ElementType: Default+Add<Output=Self::ElementType>; 
-    type NativeType;
-    fn zero() -> Self;
-    fn sub(x: &Self, y: &Self) -> Self;
-    fn add(x: &Self, y: &Self) -> Self;
-    fn mul(x: &Self, y: &Self) -> Self;
-    fn reduce_sum(z: &Self) -> Self::ElementType;
-    fn dot(x: &Self, y: &Self) -> Self::ElementType {
-        Self::reduce_sum(&Self::mul(x, y))
-    }
-}
-*/
 
 #[derive(Debug, Copy, Clone)]
 struct SimdTypeProxy<T: SimdType>(T);
@@ -62,8 +48,10 @@ impl f32x4 {
             f32x4::new(_mm_set_ps(w, x, y, z))
         }
     }
-    
-    fn zero() -> Self {
+}
+
+impl Default for f32x4 {
+    fn default() -> Self {
         unsafe {
             f32x4::new(_mm_setzero_ps())
         }
@@ -200,20 +188,19 @@ Questions:
 2. How do I want to switch between different instruction sets?
 */
 
-trait SimdVec: Sized {
-}
-/*
+trait SimdVec { } 
+
 #[derive(Debug)]
-struct SimdVecImpl<T: Copy, const MMBLOCKS: usize> {
+struct SimdVecImpl<T: Copy+Default+Sized, const MMBLOCKS: usize> {
     chunks: [T; MMBLOCKS]
 }
 
-struct SimdVecImplIterator<'a, T: Copy, const MMBLOCKS: usize> {
+struct SimdVecImplIterator<'a, T: Copy+Default, const MMBLOCKS: usize> {
     obj: &'a SimdVecImpl<T, MMBLOCKS>,
     cur: usize
 }
 
-impl<'a, T: SimdOps+Copy, const MMBLOCKS: usize> Iterator for SimdVecImplIterator<'a, T, MMBLOCKS> {
+impl<'a, T: Copy+Default, const MMBLOCKS: usize> Iterator for SimdVecImplIterator<'a, T, MMBLOCKS> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur >= MMBLOCKS {
@@ -227,16 +214,12 @@ impl<'a, T: SimdOps+Copy, const MMBLOCKS: usize> Iterator for SimdVecImplIterato
     }
 }
 
-impl<T, const MMBLOCKS: usize> SimdVec for SimdVecImpl<T, MMBLOCKS> 
-where 
-    T: SimdOps+Copy {}
+impl<T: Copy+Default, const MMBLOCKS: usize> SimdVec for SimdVecImpl<T, MMBLOCKS> {}
 
-impl<T, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> 
-where
-    T: SimdOps+Copy{
-
+impl<T: Copy+Default, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> {
+    
     fn new() -> Self {
-        let mut chunks: [T; MMBLOCKS] = [T::zero(); MMBLOCKS];
+        let mut chunks: [T; MMBLOCKS] = [T::default(); MMBLOCKS];
         SimdVecImpl::<T, MMBLOCKS> {
             chunks 
         }
@@ -254,10 +237,8 @@ where
     }
 }
 
-impl<T, const MMBLOCKS: usize> FromIterator<T> for SimdVecImpl<T, MMBLOCKS> 
-where 
-    T: SimdOps+Copy
-{
+/*
+impl<T: Copy+Default, const MMBLOCKS: usize> FromIterator<T> for SimdVecImpl<T, MMBLOCKS> {
     fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
         let mut result = Self::new();
         let mut idx = 0;
@@ -268,11 +249,10 @@ where
         result
     }
 }
+*/
 
-impl<T, const MMBLOCKS: usize> SimdOps for SimdVecImpl<T, MMBLOCKS> 
-where 
-    T: SimdOps+Copy 
-{
+/*
+impl<T: Copy, const MMBLOCKS: usize> SimdOps for SimdVecImpl<T, MMBLOCKS> {
     type ElementType = T::ElementType;
     type NativeType = T::NativeType;
 
@@ -304,10 +284,10 @@ where
         })
     }
 }
+*/
 
 impl<T, const MMBLOCKS: usize> PartialEq for SimdVecImpl<T, MMBLOCKS> 
-where 
-    T: SimdOps+Copy
+where T: Copy+Default+PartialEq
 {
     fn eq(&self, other: &Self) -> bool {
         zip_eq(self.iter(), other.iter()).
@@ -316,12 +296,9 @@ where
 }
 
 impl<T, const MMBLOCKS: usize> Eq for SimdVecImpl<T, MMBLOCKS> 
-where T: SimdOps+Copy
+where T: Copy+Default+PartialEq
 {}
-*/
 
-
-/*
 pub struct SimdVector {
     vector: Box<dyn SimdVec>,
     dim: usize
@@ -331,13 +308,13 @@ struct SimdError(String);
 impl SimdVector {
     pub fn new(dim: usize) -> Result<SimdVector, SimdError> {
         let vector = match dim {
-            0..=32       => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 4>::zero())),
-            33..=128     => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 16>::zero())),
-            129..=512    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 64>::zero())),
-            512..=768    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 96>::zero())),
-            769..=1024   => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 128>::zero())),
-            1025..=2048  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 256>::zero())),
-            2049..=4096  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 512>::zero())),
+            0..=32       => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 4>::new())),
+            33..=128     => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 16>::new())),
+            129..=512    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 64>::new())),
+            512..=768    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 96>::new())),
+            769..=1024   => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 128>::new())),
+            1025..=2048  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 256>::new())),
+            2049..=4096  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x4, 512>::new())),
             _ => None 
         };
 
@@ -345,11 +322,10 @@ impl SimdVector {
             Ok(SimdVector{ vector: item, dim: dim })
         }
         else {
-            Err(SimdError("Maximum supported dimension of SIMD vector is 4096"))
+            Err(SimdError("Maximum supported dimension of SIMD vector is 4096".to_string()))
         }
     }
 }
-*/
 
 /*
 impl SimdVector {
