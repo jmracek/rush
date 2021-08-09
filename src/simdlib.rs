@@ -5,37 +5,56 @@ use std::arch::x86::*;
 use std::arch::x86_64::*;
 
 use std::cmp::{PartialEq, Eq};
+use core::ops::{Add, Sub, Div, Mul, AddAssign};
+use std::iter::{FromIterator, Iterator};
+use itertools::zip_eq;
+use paste::paste;
 
-pub trait SimdType {}
-
-impl SimdType for __m128 {}
-impl SimdType for __m256 {}
-
-pub trait SimdOps {
+pub trait SimdType: Sized {
     type ElementType;
+    const LANES: usize;
+}
+
+impl SimdType for __m128 { 
+    type ElementType = f32; 
+    const LANES: usize = 4;
+}
+impl SimdType for __m256 { 
+    type ElementType = f32; 
+    const LANES: usize = 8;
+}
+
+/*
+pub trait SimdOps: Sized+Eq {
+    type ElementType: Default+Add<Output=Self::ElementType>; 
     type NativeType;
     fn zero() -> Self;
     fn sub(x: &Self, y: &Self) -> Self;
     fn add(x: &Self, y: &Self) -> Self;
     fn mul(x: &Self, y: &Self) -> Self;
     fn reduce_sum(z: &Self) -> Self::ElementType;
+    fn dot(x: &Self, y: &Self) -> Self::ElementType {
+        Self::reduce_sum(&Self::mul(x, y))
+    }
 }
+*/
 
-#[derive(Debug)]
-struct SimdTypeWrapper<T: SimdType> {
-    data: T
-}
+#[derive(Debug, Copy, Clone)]
+struct SimdTypeProxy<T: SimdType>(T);
 
-impl<T: SimdType> SimdTypeWrapper<T> {
+/*
+pub trait SimdFactory<const LANES: usize, T: SimdType<LANES>> {
+    fn zero() -> T;
+    fn pack(elts: [T::ElementType; LANES]) -> SimdTypeProxy<SimdType<LANES>>;
+}*/
+
+impl<T: SimdType> SimdTypeProxy<T> {
     fn new(x: T) -> Self {
-        SimdTypeWrapper {
-            data: x
-        }
+        SimdTypeProxy(x)
     }
 }
 
-type f32x4  = SimdTypeWrapper<__m128>;
-type f32x8  = SimdTypeWrapper<__m256>;
+type f32x4  = SimdTypeProxy<__m128>;
 
 impl f32x4 {
     fn pack(w: f32, x: f32, y: f32, z: f32) -> Self {
@@ -43,12 +62,18 @@ impl f32x4 {
             f32x4::new(_mm_set_ps(w, x, y, z))
         }
     }
+    
+    fn zero() -> Self {
+        unsafe {
+            f32x4::new(_mm_setzero_ps())
+        }
+    }
 }
 
 impl PartialEq for f32x4 {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            let elementwise_result = _mm_cmpeq_ps(self.data, other.data);
+            let elementwise_result = _mm_cmpeq_ps(self.0, other.0);
             let b_b_d_d = _mm_movehdup_ps(elementwise_result);
             let ab_2b_cd_2d = _mm_and_ps(elementwise_result, b_b_d_d);
             let cd_2d_d_d = _mm_movehl_ps(b_b_d_d, ab_2b_cd_2d);
@@ -64,10 +89,73 @@ impl PartialEq for f32x4 {
 
 impl Eq for f32x4 {}
 
+macro_rules! create_simd_trait {
+    ($trait:ident, $method:ident, $type:ty) => {
+        impl $trait for $type {
+            type Output = $type;
+            fn $method(self, other: Self) -> Self {
+                unsafe {
+                    <$type>::new(paste!{[<_mm _$method _ps>]}(self.0, other.0))
+                }
+            }
+        }
+    };
+    
+    ($trait:ident, $method:ident, $type:ty, $bits:literal) => {
+        impl $trait for $type {
+            type Output = $type;
+            fn $method(self, other: Self) -> Self {
+                unsafe {
+                    <$type>::new(paste!{[<_mm $bits _$method _ps>]}(self.0, other.0))
+                }
+            }
+        }
+    };
+    
+    ($trait:ident, $method:ident, $type:ty, $bits:literal, $precision:ident) => {
+        impl $trait for $type {
+            type Output = $type;
+            fn $method(self, other: Self) -> Self {
+                unsafe {
+                    <$type>::new(paste!{[<_mm $bits _$method _$precision>]}(self.0, other.0))
+                }
+            }
+        }
+    };
+}
+
+create_simd_trait!(Add, add, f32x4);
+create_simd_trait!(Sub, sub, f32x4);
+create_simd_trait!(Mul, mul, f32x4);
+create_simd_trait!(Div, div, f32x4);
+
+impl AddAssign<f32x4> for f32 {
+    fn add_assign(&mut self, rhs: f32x4) {
+        let reduction: f32;
+        unsafe {
+            // In our notation, z := a_b_c_d
+            let b_b_d_d = _mm_movehdup_ps(rhs.0);
+            let ab_2b_cd_2d = _mm_add_ps(rhs.0, b_b_d_d);
+            let cd_2d_d_d = _mm_movehl_ps(b_b_d_d, ab_2b_cd_2d);
+            let abcd_rest = _mm_add_ss(ab_2b_cd_2d, cd_2d_d_d);
+            reduction = _mm_cvtss_f32(abcd_rest);
+        }
+        *self += reduction;
+    }
+}
+
+type f32x8  = SimdTypeProxy<__m256>;
+
 impl f32x8 {
     fn pack(s:f32, t: f32, u: f32, v: f32, w: f32, x: f32, y: f32, z: f32) -> Self {
         unsafe {
             f32x8::new(_mm256_set_ps(s, t, u, v, w, x, y, z))
+        }
+    }
+    
+    fn zero() -> Self {
+        unsafe {
+            f32x8::new(_mm256_setzero_ps())
         }
     }
 }
@@ -75,10 +163,10 @@ impl f32x8 {
 impl PartialEq for f32x8 {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            let self_low:   f32x4 = f32x4::new(_mm256_castps256_ps128(self.data));
-            let self_high:  f32x4 = f32x4::new(_mm256_extractf128_ps(self.data, 1));
-            let other_low:  f32x4 = f32x4::new(_mm256_castps256_ps128(other.data));
-            let other_high: f32x4 = f32x4::new(_mm256_extractf128_ps(other.data, 1));
+            let self_low:   f32x4 = f32x4::new(_mm256_castps256_ps128(self.0));
+            let self_high:  f32x4 = f32x4::new(_mm256_extractf128_ps(self.0, 1));
+            let other_low:  f32x4 = f32x4::new(_mm256_castps256_ps128(other.0));
+            let other_high: f32x4 = f32x4::new(_mm256_extractf128_ps(other.0, 1));
             return (self_low == other_low) && (self_high == other_high)
         }
     }
@@ -86,136 +174,325 @@ impl PartialEq for f32x8 {
 
 impl Eq for f32x8 {}
 
+create_simd_trait!(Add, add, f32x8, 256);
+create_simd_trait!(Sub, sub, f32x8, 256);
+create_simd_trait!(Mul, mul, f32x8, 256);
+create_simd_trait!(Div, div, f32x8, 256);
+
+impl AddAssign<f32x8> for f32 {
+    fn add_assign(&mut self, rhs: f32x8) {
+        unsafe {
+            let low:  f32x4 = f32x4::new(_mm256_castps256_ps128(rhs.0));
+            let high: f32x4 = f32x4::new(_mm256_extractf128_ps(rhs.0, 1));
+            *self += low;
+            *self += high;
+        }
+    }
+}
+
 //type f32x16 = __m512;
 //type h32x16 = __m256bh;
 //type h32x32 = __m512bh;
 
-impl SimdOps for f32x4 {
-    type ElementType = f32;
-    type NativeType = __m128;
-    fn zero() -> Self {
-        unsafe {
-            f32x4::new(_mm_setzero_ps())
-        }
-    }
-
-    fn mul(x: &Self, y: &Self) -> Self {
-        unsafe {
-            f32x4::new(_mm_mul_ps(x.data, y.data))
-        }
-    }
-
-    fn add(x: &Self, y: &Self) -> Self {
-        unsafe {
-            f32x4::new(_mm_add_ps(x.data, y.data))
-        }
-    }
-    
-    fn sub(x: &Self, y: &Self) -> Self {
-        unsafe {
-            f32x4::new(_mm_sub_ps(x.data, y.data))
-        }
-    }
-    // SSE3  
-    fn reduce_sum(z: &Self) -> Self::ElementType {
-        unsafe {
-            // In our notation, z := a_b_c_d
-            let b_b_d_d = _mm_movehdup_ps(z.data);
-            let ab_2b_cd_2d = _mm_add_ps(z.data, b_b_d_d);
-            let cd_2d_d_d = _mm_movehl_ps(b_b_d_d, ab_2b_cd_2d);
-            let abcd_rest = _mm_add_ss(ab_2b_cd_2d, cd_2d_d_d);
-            _mm_cvtss_f32(abcd_rest)
-        }
-    }
-}
-
-impl SimdOps for f32x8 {
-    type ElementType = f32;
-    type NativeType = __m256;
-
-    fn zero() -> Self {
-        unsafe {
-            f32x8::new(_mm256_setzero_ps())
-        }
-    }
-
-    fn mul(x: &Self, y: &Self) -> Self {
-        unsafe {
-            f32x8::new(_mm256_mul_ps(x.data, y.data))
-        }
-    }
-    
-    fn add(x: &Self, y: &Self) -> Self {
-        unsafe {
-            f32x8::new(_mm256_add_ps(x.data, y.data))
-        }
-    }
-    
-    fn sub(x: &Self, y: &Self) -> Self {
-        unsafe {
-            f32x8::new(_mm256_sub_ps(x.data, y.data))
-        }
-    }
-   
-    fn reduce_sum(z: &Self) -> Self::ElementType {
-        unsafe {
-            let low:  f32x4 = f32x4::new(_mm256_castps256_ps128(z.data));
-            let high: f32x4 = f32x4::new(_mm256_extractf128_ps(z.data, 1));
-            f32x4::reduce_sum(&f32x4::add(&low, &high))
-        }
-    }
-}
-
-
-#[cfg(test)]
-mod simd_type_tests {
-    use super::*;
-
-    #[test]
-    fn test_add_f32x4() {
-        let x = f32x4::pack(1.0, 2.0, 3.0, 4.0);
-        let y = f32x4::pack(1.0, 1.0, 1.0, 1.0);
-        let result = f32x4::add(&x,&y);
-
-        assert_eq!(result, f32x4::pack(2.0, 3.0, 4.0, 5.0));
-    }
-}
-
-
 /*
 Questions:
 1. How do I let rust enable different instructions when compiling for different arch?
-2. How to efficiently do dot products?
+2. How do I want to switch between different instruction sets?
 */
 
-pub trait Simd {
+trait SimdVec: Sized {
 }
-
-pub struct SimdVectorImpl<T: SimdOps+Copy, const MMBLOCKS: usize> {
+/*
+#[derive(Debug)]
+struct SimdVecImpl<T: Copy, const MMBLOCKS: usize> {
     chunks: [T; MMBLOCKS]
 }
 
-impl<T, const MMBLOCKS: usize> Simd for SimdVectorImpl<T, MMBLOCKS> 
-where 
-    T: SimdOps+Copy {}
+struct SimdVecImplIterator<'a, T: Copy, const MMBLOCKS: usize> {
+    obj: &'a SimdVecImpl<T, MMBLOCKS>,
+    cur: usize
+}
 
-impl<T: SimdOps+Copy, const MMBLOCKS: usize> SimdVectorImpl<T, MMBLOCKS> 
-{
-    fn new(size: usize) -> Self {
-        let mut chunks: [T; MMBLOCKS] = [T::zero(); MMBLOCKS];
-        SimdVectorImpl::<T, MMBLOCKS> {
-            chunks 
+impl<'a, T: SimdOps+Copy, const MMBLOCKS: usize> Iterator for SimdVecImplIterator<'a, T, MMBLOCKS> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur >= MMBLOCKS {
+            None
+        }
+        else {
+            let result = self.obj.chunks[self.cur];
+            self.cur += 1;
+            Some(result) 
         }
     }
 }
 
+impl<T, const MMBLOCKS: usize> SimdVec for SimdVecImpl<T, MMBLOCKS> 
+where 
+    T: SimdOps+Copy {}
 
+impl<T, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> 
+where
+    T: SimdOps+Copy{
 
-pub struct SimdVector {
-    vector: Box<dyn Simd>
+    fn new() -> Self {
+        let mut chunks: [T; MMBLOCKS] = [T::zero(); MMBLOCKS];
+        SimdVecImpl::<T, MMBLOCKS> {
+            chunks 
+        }
+    }
+
+    fn set_chunk(&mut self, idx: usize, data: T) {
+        self.chunks[idx] = data;
+    }
+
+    fn iter<'a>(&'a self) -> SimdVecImplIterator<'a, T, MMBLOCKS> {
+        SimdVecImplIterator::<T, MMBLOCKS> {
+            obj: &self,
+            cur: 0
+        }
+    }
 }
+
+impl<T, const MMBLOCKS: usize> FromIterator<T> for SimdVecImpl<T, MMBLOCKS> 
+where 
+    T: SimdOps+Copy
+{
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+        let mut result = Self::new();
+        let mut idx = 0;
+        for item in iter {
+            result.set_chunk(idx, item);
+            idx += 1;
+        }
+        result
+    }
+}
+
+impl<T, const MMBLOCKS: usize> SimdOps for SimdVecImpl<T, MMBLOCKS> 
+where 
+    T: SimdOps+Copy 
+{
+    type ElementType = T::ElementType;
+    type NativeType = T::NativeType;
+
+    fn zero() -> Self {
+        SimdVecImpl::<T, MMBLOCKS>::new()
+    }
+
+    fn sub(x: &Self, y: &Self) -> Self {
+        zip_eq(x.iter(), y.iter()).
+        map( |(x, y)| T::sub(&x, &y) ).
+        collect::<Self>()
+    }
+
+    fn add(x: &Self, y: &Self) -> Self {
+        zip_eq(x.iter(), y.iter()).
+        map( |(x, y)| T::add(&x, &y) ).
+        collect::<Self>()
+    }
+
+    fn mul(x: &Self, y: &Self) -> Self {
+        zip_eq(x.iter(), y.iter()).
+        map( |(x, y)| T::mul(&x, &y) ).
+        collect::<Self>()
+    }
+
+    fn reduce_sum(z: &Self) -> Self::ElementType {
+        z.iter().fold(Self::ElementType::default(), |acc, x| {
+            acc + T::reduce_sum(&x)
+        })
+    }
+}
+
+impl<T, const MMBLOCKS: usize> PartialEq for SimdVecImpl<T, MMBLOCKS> 
+where 
+    T: SimdOps+Copy
+{
+    fn eq(&self, other: &Self) -> bool {
+        zip_eq(self.iter(), other.iter()).
+            fold(true, |acc, (x, y)| acc && (x == y))
+    }
+}
+
+impl<T, const MMBLOCKS: usize> Eq for SimdVecImpl<T, MMBLOCKS> 
+where T: SimdOps+Copy
+{}
+*/
+
+
+/*
+pub struct SimdVector {
+    vector: Box<dyn SimdVec>,
+    dim: usize
+}
+struct SimdError(String);
+
+impl SimdVector {
+    pub fn new(dim: usize) -> Result<SimdVector, SimdError> {
+        let vector = match dim {
+            0..=32       => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 4>::zero())),
+            33..=128     => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 16>::zero())),
+            129..=512    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 64>::zero())),
+            512..=768    => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 96>::zero())),
+            769..=1024   => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 128>::zero())),
+            1025..=2048  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 256>::zero())),
+            2049..=4096  => Some(Box::<dyn SimdVec>::new(SimdVecImpl::<f32x8, 512>::zero())),
+            _ => None 
+        };
+
+        if let Some(item) = vector {
+            Ok(SimdVector{ vector: item, dim: dim })
+        }
+        else {
+            Err(SimdError("Maximum supported dimension of SIMD vector is 4096"))
+        }
+    }
+}
+*/
 
 /*
 impl SimdVector {
     pub fn new(
     */
+
+
+#[cfg(test)]
+mod simd_f32x4_tests {
+    use super::*;
+
+    #[test]
+    fn test_eq_f32x4() {
+        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let equals = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let not_equals = f32x4::pack(1.0, 2.0, 3.0, 5.0);
+        assert_eq!(test_f32x4, equals);
+        assert_ne!(test_f32x4, not_equals);
+    }
+
+    #[test]
+    fn test_add_f32x4() {
+        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let y = f32x4::pack(1.0, 1.0, 1.0, 1.0);
+        let result = f32x4::add(test_f32x4,y);
+        assert_eq!(result, f32x4::pack(2.0, 3.0, 4.0, 5.0));
+    }
+    
+    #[test]
+    fn test_sub_f32x4() {
+        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let y = f32x4::pack(1.0, 1.0, 1.0, 1.0);
+        let result = f32x4::sub(test_f32x4,y);
+        assert_eq!(result, f32x4::pack(0.0, 1.0, 2.0, 3.0));
+    }
+    
+    #[test]
+    fn test_mul_f32x4() {
+        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let y = f32x4::pack(1.5, 0.1, -1.0, 0.0);
+        let result = f32x4::mul(test_f32x4,y);
+        assert_eq!(result, f32x4::pack(1.5, 0.2, -3.0, 0.0));
+    }
+    
+    #[test]
+    fn test_reduce_sum_f32x4() {
+        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let mut result = 0f32; 
+        result += test_f32x4;
+        let expected_result = 1.0 + 2.0 + 3.0 + 4.0;
+        assert_eq!(result, expected_result);
+    }
+}
+
+#[cfg(test)]
+mod simd_f32x8_tests {
+    use super::*;
+
+    #[test]
+    fn test_eq_f32x8() {
+        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let equals = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let not_equals = f32x8::pack(1.0, 2.0, 3.0, 5.0, 4.0, 6.0, 7.0, 8.0);
+        assert_eq!(test_f32x8, equals);
+        assert_ne!(test_f32x8, not_equals);
+    }
+
+    #[test]
+    fn test_add_f32x8() {
+        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let y = f32x8::pack(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+        let result = f32x8::add(test_f32x8,y);
+        assert_eq!(result, f32x8::pack(2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0));
+    }
+    
+    #[test]
+    fn test_sub_f32x8() {
+        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let y = f32x8::pack(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+        let result = f32x8::sub(test_f32x8,y);
+        assert_eq!(result, f32x8::pack(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0));
+    }
+    
+    #[test]
+    fn test_mul_f32x8() {
+        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 1.0, 6.0, 7.0, 8.0);
+        let y = f32x8::pack(1.5, 0.1, -1.0, 0.0, 0.001, 2.0, 0.7, 1.1);
+        let result = f32x8::mul(test_f32x8,y);
+        assert_eq!(result, f32x8::pack(1.5, 0.2, -3.0, 0.0, 0.001, 12.0, 4.9, 8.8));
+    }
+    
+    #[test]
+    fn test_reduce_sum_f32x8() {
+        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let mut result = 0f32;
+        result += test_f32x8;
+        let expected_result = 1.0 + 2.0 + 3.0 + 4.0 + 5.0 + 6.0 + 7.0 + 8.0;
+        assert_eq!(result, expected_result);
+    }
+}
+
+
+/*
+#[cfg(test)]
+mod simd_vector_impl_tests {
+    use super::*;
+
+    #[test]
+    fn test_simd_vector_impl_add() {
+        let mut x = SimdVecImpl::<f32x4, 2>::zero();
+        x.set_chunk(0, f32x4::pack(0.0, 1.0, 2.0, 3.0));
+        x.set_chunk(1, f32x4::pack(1.0, 2.0, 3.0, 4.0));
+        
+        let mut y = SimdVecImpl::<f32x4, 2>::zero();
+        y.set_chunk(0, f32x4::pack(1.0, 1.0, 1.0, -1.0));
+        y.set_chunk(1, f32x4::pack(1.0, 1.0, 1.0, -1.0));
+        
+        let mut expected_result = SimdVecImpl::<f32x4, 2>::zero();
+        expected_result.set_chunk(0, f32x4::pack(1.0, 2.0, 3.0, 2.0));
+        expected_result.set_chunk(1, f32x4::pack(2.0, 3.0, 4.0, 3.0));
+        
+        let result = SimdVecImpl::add(&x, &y);
+
+        assert_eq!(&result, &expected_result);
+    }
+    
+    #[test]
+    fn test_simd_vector_impl_sub() {
+        let mut x = SimdVecImpl::<f32x4, 2>::zero();
+        x.set_chunk(0, f32x4::pack(0.0, 1.0, 2.0, 3.0));
+        x.set_chunk(1, f32x4::pack(1.0, 2.0, 3.0, 4.0));
+        
+        let mut y = SimdVecImpl::<f32x4, 2>::zero();
+        y.set_chunk(0, f32x4::pack(1.0, 1.0, 1.0, -1.0));
+        y.set_chunk(1, f32x4::pack(1.0, 1.0, 1.0, -1.0));
+        
+        let mut expected_result = SimdVecImpl::<f32x4, 2>::zero();
+        expected_result.set_chunk(0, f32x4::pack(-1.0, 0.0, 1.0, 4.0));
+        expected_result.set_chunk(1, f32x4::pack(0.0, 1.0, 2.0, 5.0));
+        
+        let result = SimdVecImpl::sub(&x, &y);
+
+        assert_eq!(&result, &expected_result);
+    }
+}
+*/
