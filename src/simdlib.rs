@@ -7,7 +7,7 @@ use std::arch::x86_64::*;
 use std::default::Default;
 use std::cmp::{PartialEq, Eq};
 use core::ops::{Add, Sub, Div, Mul, AddAssign};
-use std::iter::{FromIterator, Iterator};
+use std::iter::Iterator;
 use itertools::zip_eq;
 use paste::paste;
 
@@ -26,7 +26,7 @@ impl SimdType for __m256 {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct SimdTypeProxy<T: SimdType>(T);
+pub struct SimdTypeProxy<T: SimdType>(T);
 
 /*
 pub trait SimdFactory<const LANES: usize, T: SimdType<LANES>> {
@@ -34,13 +34,18 @@ pub trait SimdFactory<const LANES: usize, T: SimdType<LANES>> {
     fn pack(elts: [T::ElementType; LANES]) -> SimdTypeProxy<SimdType<LANES>>;
 }*/
 
+trait Arithmetic: Add + Sub + Mul + Div + Sized {}
+impl<T> Arithmetic for T where
+    T: Add + Sub + Mul + Div + Sized,
+    f32: AddAssign<T> {}
+
 impl<T: SimdType> SimdTypeProxy<T> {
     fn new(x: T) -> Self {
         SimdTypeProxy(x)
     }
 }
 
-type f32x4  = SimdTypeProxy<__m128>;
+pub type f32x4  = SimdTypeProxy<__m128>;
 
 impl f32x4 {
     fn pack(w: f32, x: f32, y: f32, z: f32) -> Self {
@@ -132,7 +137,7 @@ impl AddAssign<f32x4> for f32 {
     }
 }
 
-type f32x8  = SimdTypeProxy<__m256>;
+pub type f32x8  = SimdTypeProxy<__m256>;
 
 impl f32x8 {
     fn pack(s:f32, t: f32, u: f32, v: f32, w: f32, x: f32, y: f32, z: f32) -> Self {
@@ -193,7 +198,7 @@ Questions:
 trait SimdVec  { } 
 
 #[derive(Debug)]
-struct SimdVecImpl<T: Copy+Default+Sized, const MMBLOCKS: usize> {
+pub struct SimdVecImpl<T: Copy+Default+Sized, const MMBLOCKS: usize> {
     chunks: [T; MMBLOCKS]
 }
 
@@ -219,8 +224,8 @@ impl<'a, T: Copy+Default, const MMBLOCKS: usize> Iterator for SimdVecImplIterato
 impl<T: Copy+Default, const MMBLOCKS: usize> SimdVec for SimdVecImpl<T, MMBLOCKS> {}
 
 impl<T: Copy+Default, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> {
-    fn new() -> Self where Self: Sized {
-        let mut chunks: [T; MMBLOCKS] = [T::default(); MMBLOCKS];
+    pub fn new() -> Self where Self: Sized {
+        let chunks: [T; MMBLOCKS] = [T::default(); MMBLOCKS];
         SimdVecImpl::<T, MMBLOCKS> {
             chunks 
         }
@@ -235,6 +240,26 @@ impl<T: Copy+Default, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> {
             obj: &self,
             cur: 0
         }
+    }
+}
+
+use crate::lshlib::MetricSpace;
+
+impl<T, const MMBLOCKS: usize> MetricSpace for SimdVecImpl<T, MMBLOCKS> where
+    T: Copy+Default+Arithmetic,
+    <T as Sub>::Output: Copy+Mul,
+    f32: AddAssign<<<T as Sub>::Output as Mul>::Output>
+{
+    fn distance(&self, other: &Self) -> f32 {
+        let norm_squared = 
+            zip_eq(self.iter(), other.iter()).
+                fold(0f32, |mut acc, (x, y)| {
+                    let delta = x - y;
+                    let sq = delta * delta;
+                    acc += sq;
+                    acc
+                });
+        norm_squared.sqrt()
     }
 }
 
@@ -426,6 +451,22 @@ mod simd_f32x8_tests {
         result += test_f32x8;
         let expected_result = 1.0 + 2.0 + 3.0 + 4.0 + 5.0 + 6.0 + 7.0 + 8.0;
         assert_eq!(result, expected_result);
+    }
+
+    #[test]
+    fn test_simd_impl_distance() {
+        let mut x = SimdVecImpl::<f32x4, 2>::new();
+        x.set_chunk(0, f32x4::pack(0.0, 1.0, 2.0, 3.0));
+        x.set_chunk(1, f32x4::pack(1.0, 2.0, 3.0, 4.0));
+        
+        let mut y = SimdVecImpl::<f32x4, 2>::new();
+        y.set_chunk(0, f32x4::pack(1.0, 1.0, 1.0, -1.0));
+        y.set_chunk(1, f32x4::pack(1.0, 1.0, 1.0, -1.0));
+        
+        let d = x.distance(&y);
+        let expected_result: f32 = (1.0f32 + 1.0f32 + 16.0f32 + 1.0f32 + 4.0f32 + 25.0f32).sqrt();
+
+        assert_eq!(d, expected_result);
     }
 }
 

@@ -1,3 +1,3 @@
 pub mod lshlib;
-mod simdlib;
-mod expressionlib;
+pub mod simdlib;
+//mod expressionlib;

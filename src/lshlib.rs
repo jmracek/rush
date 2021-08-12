@@ -4,6 +4,10 @@ use std::vec::Vec;
 use std::rc::Rc;
 use rand::Rng;
 
+pub trait MetricSpace {
+    fn distance(&self, other: &Self) -> f32;
+}
+
 pub trait Euclidian {
     fn vec(&self) -> &Vec<f32>;
     fn dimension(&self) -> usize;
