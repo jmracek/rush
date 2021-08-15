@@ -64,6 +64,8 @@ impl Default for f32x4 {
 }
 
 impl PartialEq for f32x4 {
+    
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         unsafe {
             let elementwise_result = _mm_cmpeq_ps(self.0, other.0);
@@ -86,6 +88,8 @@ macro_rules! create_simd_trait {
     ($trait:ident, $method:ident, $type:ty) => {
         impl $trait for $type {
             type Output = $type;
+            
+            #[inline(always)]
             fn $method(self, other: Self) -> Self {
                 unsafe {
                     <$type>::new(paste!{[<_mm _$method _ps>]}(self.0, other.0))
@@ -97,6 +101,8 @@ macro_rules! create_simd_trait {
     ($trait:ident, $method:ident, $type:ty, $bits:literal) => {
         impl $trait for $type {
             type Output = $type;
+            
+            #[inline(always)]
             fn $method(self, other: Self) -> Self {
                 unsafe {
                     <$type>::new(paste!{[<_mm $bits _$method _ps>]}(self.0, other.0))
@@ -108,6 +114,8 @@ macro_rules! create_simd_trait {
     ($trait:ident, $method:ident, $type:ty, $bits:literal, $precision:ident) => {
         impl $trait for $type {
             type Output = $type;
+            
+            #[inline(always)]
             fn $method(self, other: Self) -> Self {
                 unsafe {
                     <$type>::new(paste!{[<_mm $bits _$method _$precision>]}(self.0, other.0))
@@ -123,17 +131,17 @@ create_simd_trait!(Mul, mul, f32x4);
 create_simd_trait!(Div, div, f32x4);
 
 impl AddAssign<f32x4> for f32 {
+    #[inline(always)]
     fn add_assign(&mut self, rhs: f32x4) {
-        let reduction: f32;
         unsafe {
             // In our notation, z := a_b_c_d
             let b_b_d_d = _mm_movehdup_ps(rhs.0);
             let ab_2b_cd_2d = _mm_add_ps(rhs.0, b_b_d_d);
             let cd_2d_d_d = _mm_movehl_ps(b_b_d_d, ab_2b_cd_2d);
             let abcd_rest = _mm_add_ss(ab_2b_cd_2d, cd_2d_d_d);
-            reduction = _mm_cvtss_f32(abcd_rest);
+            let reduction: f32 = _mm_cvtss_f32(abcd_rest);
+            *self += reduction;
         }
-        *self += reduction;
     }
 }
 
@@ -156,6 +164,7 @@ impl Default for f32x8 {
 }
 
 impl PartialEq for f32x8 {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         unsafe {
             let self_low:   f32x4 = f32x4::new(_mm256_castps256_ps128(self.0));
@@ -175,12 +184,31 @@ create_simd_trait!(Mul, mul, f32x8, 256);
 create_simd_trait!(Div, div, f32x8, 256);
 
 impl AddAssign<f32x8> for f32 {
+    #[inline(always)]
     fn add_assign(&mut self, rhs: f32x8) {
         unsafe {
             let low:  f32x4 = f32x4::new(_mm256_castps256_ps128(rhs.0));
             let high: f32x4 = f32x4::new(_mm256_extractf128_ps(rhs.0, 1));
-            *self += low;
-            *self += high;
+            let combined = low + high;
+            *self += combined;
+        }
+    }
+}
+
+impl AddAssign for f32x8 {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: f32x8) {
+        unsafe {
+            *self = *self + rhs;
+        }
+    }
+}
+
+impl AddAssign for f32x4 {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: f32x4) {
+        unsafe {
+            *self = *self + rhs;
         }
     }
 }
@@ -244,22 +272,27 @@ impl<T: Copy+Default, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> {
 }
 
 use crate::lshlib::MetricSpace;
+use std::time::{Duration, Instant};
 
 impl<T, const MMBLOCKS: usize> MetricSpace for SimdVecImpl<T, MMBLOCKS> where
     T: Copy+Default+Arithmetic,
     <T as Sub>::Output: Copy+Mul,
-    f32: AddAssign<<<T as Sub>::Output as Mul>::Output>
+    T: AddAssign<<<T as Sub>::Output as Mul>::Output>,
+    f32: AddAssign<T>,
+    T: Add<<<T as Sub>::Output as Mul>::Output, Output=T>
 {
     fn distance(&self, other: &Self) -> f32 {
         let norm_squared = 
             zip_eq(self.iter(), other.iter()).
-                fold(0f32, |mut acc, (x, y)| {
+                fold(T::default(), |mut acc, (x, y)| {
                     let delta = x - y;
                     let sq = delta * delta;
                     acc += sq;
                     acc
                 });
-        norm_squared.sqrt()
+        let mut result = 0f32;
+        result += norm_squared;
+        result.sqrt()
     }
 }
 

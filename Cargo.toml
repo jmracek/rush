@@ -1,12 +1,18 @@
 [package]
 name = "rush"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["James Mracek <james.a.mracek@gmail.com>"]
 edition = "2018"
 
+[lib]
+name = "rush"
+path = "src/lib.rs"
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-
 
 [dev-dependencies]
 criterion = "0.3"
