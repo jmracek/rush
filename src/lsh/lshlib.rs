@@ -4,163 +4,6 @@ use std::vec::Vec;
 use std::rc::Rc;
 use rand::Rng;
 
-pub trait MetricSpace {
-    fn distance(&self, other: &Self) -> f32;
-}
-
-pub trait Euclidian {
-    fn vec(&self) -> &Vec<f32>;
-    fn dimension(&self) -> usize;
-}
-
-impl Euclidian for Vec<f32> {
-    fn dimension(&self) -> usize { self.len() }
-    fn vec(&self) -> &Vec<f32> { &self }
-}
-
-impl<'a, T> Euclidian for &'a T where T: Euclidian {
-    fn dimension(&self) -> usize { T::dimension(self) }
-    fn vec(&self) -> &Vec<f32> { T::vec(self) }
-}
-
-impl<'a, T> Euclidian for &'a mut T where T: Euclidian {
-    fn dimension(&self) -> usize { T::dimension(self) }
-    fn vec(&self) -> &Vec<f32> { T::vec(self) }
-}
-
-fn euclidian_distance<T: Euclidian>(x: &T, y: &T) -> f32 {
-    zip_eq(x.vec().iter(), y.vec().iter()).
-        fold(0.0, |acc, (x, y)| acc + (x - y).powf(2.0)).
-        sqrt()
-}
-
-struct UnitVector {
-    data: Vec<f32>
-}
-
-impl UnitVector {
-    fn rand(dimension: u16) -> UnitVector {
-        let mut rng = rand::thread_rng();
-        let random_vector = (0..dimension).
-            map(|_| rng.gen_range(-1.0..1.0)).
-            collect::<Vec<f32>>();
-        let norm = random_vector.
-            iter().
-            fold(0.0, |acc, x| acc + x.powf(2f32)).
-            sqrt();
-        let data = random_vector.
-            iter().
-            map(|x| x / norm).
-            collect::<Vec<f32>>();
-        UnitVector{data}
-    }
-}
-
-impl Euclidian for UnitVector {
-    fn vec(&self) -> &Vec<f32> {
-        &self.data
-    }
-    
-    fn dimension(&self) -> usize {
-        self.data.len()
-    }
-}
-
-pub struct RandomProjection {
-    v: UnitVector
-}
-
-impl RandomProjection {
-    fn new(dimension: u16) -> RandomProjection {
-        RandomProjection{ v: UnitVector::rand(dimension) }
-    } 
-
-    fn hash<T: Euclidian>(&self, v: &T) -> u8 {
-        if v.dimension() != self.v.dimension() {
-            panic!(
-                "Attempted to compute hash when input dimension was {}, but RandomProjection has dimension {}", 
-                v.dimension(),
-                self.v.dimension()
-            )
-        }
-        let dot_product: f32 = zip_eq(self.v.vec().iter(), v.vec().iter()).
-            fold(0.0, |acc, (x, y)| acc + x * y);
-        if dot_product > 0.0 { 1u8 } else { 0u8 }
-    }
-}
-
-pub struct StableHashFunction {
-    projections: Vec<RandomProjection>
-}
-
-impl StableHashFunction {
-    pub fn rand(num_projections: u16, dimension: u16) -> StableHashFunction {
-        let hash_functions = (0..num_projections).
-            map(|_| RandomProjection::new(dimension)).
-            collect::<Vec<RandomProjection>>();
-
-        StableHashFunction{projections: hash_functions}
-    }
-
-    pub fn hash<T: Euclidian>(&self, v: &T) -> u64 {
-        self.projections.
-            iter().
-            map(|proj| proj.hash(v)).
-            enumerate().
-            fold(0u64, |acc, (i, sgn)| acc | ((sgn as u64) << i))
-    }
-}
-
-struct StableHashTable<T: Euclidian> {
-    table: HashMap<u64, Vec<Rc<T>>>,
-    hashfn: StableHashFunction
-}
-
-impl<T: Euclidian> StableHashTable<T> {
-    fn new(num_projections: u16, dimension: u16) -> StableHashTable<T> {
-        StableHashTable {
-            table: HashMap::<u64, Vec<Rc<T>>>::new(),
-            hashfn: StableHashFunction::rand(num_projections, dimension)
-        }
-    }
-
-    fn insert(&mut self, item: Rc<T>) {
-        let hash_key = self.hashfn.hash(&*item);
-        if let Some(container) = self.table.get_mut(&hash_key) {
-            container.push(item);
-        }
-        else {
-            self.table.insert(hash_key, vec![item]);
-        }
-    }
-    
-    fn query<'a>(&'a self, item: &T) -> Option<&'a T> {
-        match self.table.get(&self.hashfn.hash(item)) {
-            None => None,
-            Some(result_set) => {
-                let best_match: Option<(usize, f32)> = 
-                    result_set.
-                        iter().
-                        map(|q| euclidian_distance(&**q, item)).
-                        enumerate().
-                        fold(None, |acc, (idx, q)| {
-                            match acc {
-                                None => Some((idx, q)),
-                                Some((min_idx, p)) => {
-                                    if q < p { Some((idx, q)) } else { Some((min_idx, p)) }
-                                }
-                            }
-                        });
-                
-                match best_match {
-                    Some((idx_closest, _)) => Some(&*result_set[idx_closest]),
-                    _ => None
-                }
-            }
-        }
-    }
-}
-
 pub struct LocalitySensitiveHashDatabase<T: Euclidian> {
     items: Vec<Rc<T>>,
     tables: Vec<StableHashTable<T>>
@@ -358,6 +201,21 @@ Query:
 1. Given vector q, compute all L hashes and retrieve all the elements that hashed to g(q)
 2. Among g_i(q), find the closest vector to q for all i, call it \hat{g}_i(q)
 3. Find argmin_i d(\hat{g}_i(q), q)
+
+*/
+
+
+/*
+
+
+
+UnitVector<T: Vector>
+RandomProjection<T: Vector>
+
+StableHashFunction<T: Vector, const N: usize>
+StableHashTable<T: Vector, const N: usize>
+
+
 
 */
 
