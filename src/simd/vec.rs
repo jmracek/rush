@@ -1,6 +1,6 @@
 use crate::simd::base::*;
 use core::ops::{Add, Sub, Div, Mul, AddAssign};
-use std::iter::{FromIterator, Iterator};
+use std::iter::{IntoIterator, FromIterator, Iterator};
 use itertools::zip_eq;
 
 trait SimdVec  { } 
@@ -9,6 +9,44 @@ trait SimdVec  { }
 pub struct SimdVecImpl<T: SimdType, const MMBLOCKS: usize> {
     chunks: [T; MMBLOCKS]
 }
+
+pub struct SimdVecImplElementIterator<'a, T: SimdType, const MMBLOCKS: usize> {
+    obj: &'a SimdVecImpl<T, MMBLOCKS>,
+    cur: usize
+}
+
+impl<'a, T: SimdType, const MMBLOCKS: usize> Iterator for SimdVecImplElementIterator<'a, T, MMBLOCKS> {
+    type Item = T::ElementType;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur >= MMBLOCKS * T::LANES {
+            None
+        }
+        else {
+            let arr = &self.obj.chunks;
+            let chunk_idx = self.cur / T::LANES;
+            let lane_idx = (self.cur % T::LANES) as isize;
+            unsafe { 
+                let chunk_ptr = std::mem::transmute::<&T, *const T::ElementType>(&arr[chunk_idx]);
+                let element_ptr = chunk_ptr.offset(lane_idx);
+                self.cur += 1;
+                Some(*element_ptr)
+            }
+        }
+    }
+}
+
+impl<'a, T: SimdType, const MMBLOCKS: usize> IntoIterator for &'a SimdVecImpl<T, MMBLOCKS> {
+    type Item = T::ElementType;
+    type IntoIter = SimdVecImplElementIterator<'a, T, MMBLOCKS>;
+    fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
+        SimdVecImplElementIterator {
+            obj: &self,
+            cur: 0
+        }
+    }
+}
+
+
 
 struct SimdVecImplIterator<'a, T: SimdType, const MMBLOCKS: usize> {
     obj: &'a SimdVecImpl<T, MMBLOCKS>,
@@ -42,8 +80,8 @@ impl<T: SimdType, const MMBLOCKS: usize> SimdVecImpl<T, MMBLOCKS> {
         self.chunks[idx] = data;
     }
 
-    fn iter<'a>(&'a self) -> SimdVecImplIterator<'a, T, MMBLOCKS> {
-        SimdVecImplIterator::<T, MMBLOCKS> {
+    fn chunk_iter<'a>(&'a self) -> SimdVecImplIterator<'a, T, MMBLOCKS> {
+        SimdVecImplIterator {
             obj: &self,
             cur: 0
         }
@@ -185,7 +223,7 @@ impl<T: SimdType<ElementType=f32>, const MMBLOCKS: usize> Vector for SimdVecImpl
 
     fn dot(&self, other: &Self) -> <Self as Vector>::DType {
         let (ns1, ns2, ns3, ns4) = 
-            zip_eq(self.iter(), other.iter()).
+            zip_eq(self.chunk_iter(), other.chunk_iter()).
             fold((T::default(), T::default(), T::default(), T::default()), 
                  |(acc1, acc2, acc3, acc4), ((x1, x2, x3, x4), (y1, y2, y3, y4))| {
                      (x1.fmadd(y1, acc1), x2.fmadd(y2, acc2), x3.fmadd(y3, acc3), x4.fmadd(y4, acc4))
@@ -200,7 +238,7 @@ impl<T: SimdType<ElementType=f32>, const MMBLOCKS: usize> Vector for SimdVecImpl
 
     fn distance(&self, other: &Self) -> <Self as Vector>::DType {
         let (ns1, ns2, ns3, ns4) = 
-            zip_eq(self.iter(), other.iter()).
+            zip_eq(self.chunk_iter(), other.chunk_iter()).
                 fold((T::default(), T::default(), T::default(), T::default()), |(acc1, acc2, acc3, acc4), ((x1, x2, x3, x4), (y1, y2, y3, y4))| {
                     let delta1 = x1 - y1;
                     let delta2 = x2 - y2;
@@ -226,7 +264,7 @@ impl<T: SimdType, const MMBLOCKS: usize> PartialEq for SimdVecImpl<T, MMBLOCKS>
 where T: Default+PartialEq
 {
     fn eq(&self, other: &Self) -> bool {
-        zip_eq(self.iter(), other.iter()).
+        zip_eq(self.chunks.iter(), other.chunks.iter()).
             fold(true, |acc, (x, y)| acc && (x == y))
     }
 }

@@ -1,5 +1,5 @@
 use core::ops::{Add, Sub, Div, Mul};
-use std::iter::FromIterator;
+use std::iter::{IntoIterator, FromIterator};
 
 pub trait VectorArithmetic:
     Add<Output=Self> + 
@@ -13,11 +13,16 @@ pub trait VectorArithmetic:
     type DType;
 }
 
-pub trait Vector: 
+pub trait Vector:
     VectorArithmetic<DType=<Self as Vector>::DType> +
     FromIterator<<Self as Vector>::DType>
+where
+    for<'a> &'a Self: IntoIterator<
+        Item=<Self as Vector>::DType
+    >
 {
     type DType;
+
     fn distance(&self, other: &Self) -> <Self as Vector>::DType;
     fn dot(&self, other: &Self) -> <Self as Vector>::DType;
     fn dimension(&self) -> usize;

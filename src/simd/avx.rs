@@ -19,7 +19,7 @@ pub type f32x8  = SimdTypeProxy<__m256>;
 impl f32x8 {
     fn from_elts(s:f32, t: f32, u: f32, v: f32, w: f32, x: f32, y: f32, z: f32) -> Self {
         unsafe {
-            f32x8::new(_mm256_set_ps(s, t, u, v, w, x, y, z))
+            f32x8::new(_mm256_set_ps(z, y, x, w, v, u, t, s))
         }
     }    
 }
@@ -100,40 +100,40 @@ mod simd_f32x8_tests {
 
     #[test]
     fn test_eq_f32x8() {
-        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
-        let equals = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
-        let not_equals = f32x8::pack(1.0, 2.0, 3.0, 5.0, 4.0, 6.0, 7.0, 8.0);
+        let test_f32x8 = f32x8::from_elts(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let equals = f32x8::from_elts(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let not_equals = f32x8::from_elts(1.0, 2.0, 3.0, 5.0, 4.0, 6.0, 7.0, 8.0);
         assert_eq!(test_f32x8, equals);
         assert_ne!(test_f32x8, not_equals);
     }
 
     #[test]
     fn test_add_f32x8() {
-        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
-        let y = f32x8::pack(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+        let test_f32x8 = f32x8::from_elts(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let y = f32x8::from_elts(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
         let result = f32x8::add(test_f32x8,y);
-        assert_eq!(result, f32x8::pack(2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0));
+        assert_eq!(result, f32x8::from_elts(2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0));
     }
     
     #[test]
     fn test_sub_f32x8() {
-        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
-        let y = f32x8::pack(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+        let test_f32x8 = f32x8::from_elts(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let y = f32x8::from_elts(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
         let result = f32x8::sub(test_f32x8,y);
-        assert_eq!(result, f32x8::pack(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0));
+        assert_eq!(result, f32x8::from_elts(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0));
     }
     
     #[test]
     fn test_mul_f32x8() {
-        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 1.0, 6.0, 7.0, 8.0);
-        let y = f32x8::pack(1.5, 0.1, -1.0, 0.0, 0.001, 2.0, 0.7, 1.1);
+        let test_f32x8 = f32x8::from_elts(1.0, 2.0, 3.0, 4.0, 1.0, 6.0, 7.0, 8.0);
+        let y = f32x8::from_elts(1.5, 0.1, -1.0, 0.0, 0.001, 2.0, 0.7, 1.1);
         let result = f32x8::mul(test_f32x8,y);
-        assert_eq!(result, f32x8::pack(1.5, 0.2, -3.0, 0.0, 0.001, 12.0, 4.9, 8.8));
+        assert_eq!(result, f32x8::from_elts(1.5, 0.2, -3.0, 0.0, 0.001, 12.0, 4.9, 8.8));
     }
     
     #[test]
     fn test_reduce_sum_f32x8() {
-        let test_f32x8 = f32x8::pack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        let test_f32x8 = f32x8::from_elts(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
         let mut result = 0f32;
         result += test_f32x8;
         let expected_result = 1.0 + 2.0 + 3.0 + 4.0 + 5.0 + 6.0 + 7.0 + 8.0;

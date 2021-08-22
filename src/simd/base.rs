@@ -23,7 +23,8 @@ pub trait SimdType:
         Mul<Self, Output=Self> +
         AddAssign<Self> +
         Default +
-        Clone;
+        Clone +
+        Copy;
     const LANES: usize;
     fn pack(elts: &Vec<Self::ElementType>) -> Self;
 }

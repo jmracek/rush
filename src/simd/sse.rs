@@ -18,7 +18,7 @@ pub type f32x4  = SimdTypeProxy<__m128>;
 impl f32x4 {
     fn from_elts(w: f32, x: f32, y: f32, z: f32) -> Self {
         unsafe {
-            f32x4::new(_mm_set_ps(w, x, y, z))
+            f32x4::new(_mm_set_ps(z, y, x, w))
         }
     }
 }
@@ -106,40 +106,40 @@ mod simd_f32x4_tests {
 
     #[test]
     fn test_eq_f32x4() {
-        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
-        let equals = f32x4::pack(1.0, 2.0, 3.0, 4.0);
-        let not_equals = f32x4::pack(1.0, 2.0, 3.0, 5.0);
+        let test_f32x4 = f32x4::from_elts(1.0, 2.0, 3.0, 4.0);
+        let equals = f32x4::from_elts(1.0, 2.0, 3.0, 4.0);
+        let not_equals = f32x4::from_elts(1.0, 2.0, 3.0, 5.0);
         assert_eq!(test_f32x4, equals);
         assert_ne!(test_f32x4, not_equals);
     }
 
     #[test]
     fn test_add_f32x4() {
-        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
-        let y = f32x4::pack(1.0, 1.0, 1.0, 1.0);
+        let test_f32x4 = f32x4::from_elts(1.0, 2.0, 3.0, 4.0);
+        let y = f32x4::from_elts(1.0, 1.0, 1.0, 1.0);
         let result = f32x4::add(test_f32x4,y);
-        assert_eq!(result, f32x4::pack(2.0, 3.0, 4.0, 5.0));
+        assert_eq!(result, f32x4::from_elts(2.0, 3.0, 4.0, 5.0));
     }
     
     #[test]
     fn test_sub_f32x4() {
-        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
-        let y = f32x4::pack(1.0, 1.0, 1.0, 1.0);
+        let test_f32x4 = f32x4::from_elts(1.0, 2.0, 3.0, 4.0);
+        let y = f32x4::from_elts(1.0, 1.0, 1.0, 1.0);
         let result = f32x4::sub(test_f32x4,y);
-        assert_eq!(result, f32x4::pack(0.0, 1.0, 2.0, 3.0));
+        assert_eq!(result, f32x4::from_elts(0.0, 1.0, 2.0, 3.0));
     }
     
     #[test]
     fn test_mul_f32x4() {
-        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
-        let y = f32x4::pack(1.5, 0.1, -1.0, 0.0);
+        let test_f32x4 = f32x4::from_elts(1.0, 2.0, 3.0, 4.0);
+        let y = f32x4::from_elts(1.5, 0.1, -1.0, 0.0);
         let result = f32x4::mul(test_f32x4,y);
-        assert_eq!(result, f32x4::pack(1.5, 0.2, -3.0, 0.0));
+        assert_eq!(result, f32x4::from_elts(1.5, 0.2, -3.0, 0.0));
     }
     
     #[test]
     fn test_reduce_sum_f32x4() {
-        let test_f32x4 = f32x4::pack(1.0, 2.0, 3.0, 4.0);
+        let test_f32x4 = f32x4::from_elts(1.0, 2.0, 3.0, 4.0);
         let mut result = 0f32; 
         result += test_f32x4;
         let expected_result = 1.0 + 2.0 + 3.0 + 4.0;
