@@ -206,6 +206,34 @@ mod tests {
     
     #[test]
     fn test_random_projection_hash() {
+        let serialized_random_proj = 
+            "[32,0,0,0,\
+              185,61,37,190,    99,122,71,190,  137,34,142,190, 202,156,230,188,\
+              15,118,41,190,    148,100,68,62,  23,137,7,61,    156,152,233,61,\
+              149,177,172,189,  146,174,66,190, 6,94,28,62,     103,87,110,190,\
+              183,175,139,62,   28,17,28,62,    144,24,185,189, 4,79,85,62,\
+              83,242,15,62,     152,253,57,190, 39,134,209,187, 188,141,33,62,\
+              79,111,32,62,     214,107,91,190, 179,14,53,62,   251,25,64,62,\
+              236,187,38,187,   183,160,98,189, 50,95,95,189,   247,171,90,190,\
+              191,97,160,190,   128,86,147,62,  155,128,3,62,   255,47,92,62]";
+
+        let rp: RandomProjection<SimdVecImpl<f32x4, 8>> = 
+            serde_json::from_str(&serialized_random_proj).unwrap();
+
+        let mut positive = vec![0f32; 32];
+        let mut negative = vec![0f32; 32];
+        positive[0] = -1f32;
+        positive[1] = -1f32;
+        positive[2] = -1f32;
+        positive[3] = -1f32;
+
+        negative[0] = 1f32;
+
+        let pos = positive.into_iter().collect::<SimdVecImpl<f32x4, 8>>();
+        let neg = negative.into_iter().collect::<SimdVecImpl<f32x4, 8>>();
+
+        assert!(rp.hash(&pos) > 0);
+        assert!(rp.hash(&neg) == 0);
     }
     
     #[test]

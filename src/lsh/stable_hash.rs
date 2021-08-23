@@ -1,14 +1,22 @@
 use crate::lsh::random_projection::RandomProjection;
 use crate::lsh::vector::Vector;
-use std::collections::HashMap;
 use std::vec::Vec;
-use std::rc::Rc;
 
-pub struct StableHashFunction<T: Vector> {
+use serde::{Serialize, Deserialize};
+
+pub struct StableHashFunction<T> 
+where
+    T: Vector<DType=f32>,
+    for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
+{
     projections: Vec<RandomProjection<T>>
 }
 
-impl<T: Vector<DType=f32>> StableHashFunction<T> {
+impl<T: Vector<DType=f32>> StableHashFunction<T> 
+where
+    T: Vector<DType=f32>,
+    for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
+{
     pub fn new(bits: usize, dimension: usize) -> Self {
         let projections = (0..bits).
             map(|_| RandomProjection::<T>::new(dimension)).
@@ -26,56 +34,18 @@ impl<T: Vector<DType=f32>> StableHashFunction<T> {
     }
 }
 
-struct StableHashTable<T: Vector> {
-    table: HashMap<u64, Vec<Rc<T>>>,
-    hashfn: StableHashFunction<T>
-}
-
-impl<T: Vector<DType=f32>> StableHashTable<T> {
-    fn new(dimension: usize) -> Self {
-        StableHashTable {
-            table: HashMap::<u64, Vec<Rc<T>>>::new(),
-            hashfn: StableHashFunction::<T>::new(64, dimension)
-        }
-    }
-
-    fn insert(&mut self, item: Rc<T>) {
-        let hash_key = self.hashfn.hash(&*item);
-        if let Some(container) = self.table.get_mut(&hash_key) {
-            container.push(item);
-        }
-        else {
-            self.table.insert(hash_key, vec![item]);
-        }
-    }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::simd::vec::SimdVecImpl;
+    use crate::simd::sse::f32x4;
+    use serde_json;
     
-    fn query<'a>(&'a self, item: &T) -> Option<&'a T> {
-        match self.table.get(&self.hashfn.hash(item)) {
-            None => None,
-            Some(result_set) => {
-                let best_match: Option<(usize, f32)> = 
-                    result_set.
-                        iter().
-                        map(|q| T::distance(&**q, item)).
-                        enumerate().
-                        fold(None, |acc, (idx, q)| {
-                            match acc {
-                                None => Some((idx, q)),
-                                Some((min_idx, p)) => {
-                                    if q < p { Some((idx, q)) } else { Some((min_idx, p)) }
-                                }
-                            }
-                        });
-                
-                match best_match {
-                    Some((idx_closest, _)) => Some(&*result_set[idx_closest]),
-                    _ => None
-                }
-            }
-        }
-    }
+    #[test]
+    fn test_insert_to_stable_hash_table() {
+        let f = StableHashFunction::<SimdVecImpl<f32x4, 1>>::new(64, 4);
 
-    fn query_set<'a>(&'a self, item: &T) -> Option<&'a Vec<Rc<T>>> {
-        self.table.get(&self.hashfn.hash(item))
+// [4,0,0,0,0,0,128,127,0,0,128,255,0,0,128,127,0,0,128,255]
     }
 }
+
