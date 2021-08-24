@@ -16,7 +16,7 @@ impl SimdNativeType for __m128 {}
 pub type f32x4  = SimdTypeProxy<__m128>;
 
 impl f32x4 {
-    fn from_elts(w: f32, x: f32, y: f32, z: f32) -> Self {
+    pub fn from_elts(w: f32, x: f32, y: f32, z: f32) -> Self {
         unsafe {
             f32x4::new(_mm_set_ps(z, y, x, w))
         }

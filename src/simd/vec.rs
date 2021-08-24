@@ -1,4 +1,8 @@
 use crate::simd::base::*;
+use crate::lsh::lsh_database::Cacheable;
+use crate::simd::sse::f32x4;
+use crate::simd::avx::f32x8;
+use crate::simd::murmur::murmur3_x64_128;
 use core::ops::{Add, Sub, Div, Mul, AddAssign};
 use std::iter::{IntoIterator, FromIterator, Iterator};
 use itertools::zip_eq;
@@ -272,6 +276,14 @@ where T: Default+PartialEq
 impl<T: SimdType, const MMBLOCKS: usize> Eq for SimdVecImpl<T, MMBLOCKS> 
 where T: Default+PartialEq
 {}
+
+impl<const MMBLOCKS: usize> Cacheable for SimdVecImpl<f32x4, MMBLOCKS> {
+    fn cache_id(&self) -> u128 {
+        murmur3_x64_128(&self.chunks, 0u32)
+    }
+}
+
+
 
 /*
 pub struct SimdVector {
