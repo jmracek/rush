@@ -15,6 +15,16 @@ struct CacheItem<T: Cacheable> {
     hash: u128
 }
 
+impl<T: Cacheable> CacheItem<T> {
+    fn new(item: T) -> Self {
+        let hashcode = item.cache_id();
+        CacheItem {
+            value: item,
+            hash: hashcode
+        }
+    }
+}
+
 impl<T: Cacheable> Hash for CacheItem<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash.hash(state);
@@ -87,14 +97,7 @@ where
     }
 
     pub fn insert(&mut self, item: T) {
-        let hashcode = item.cache_id();
-        let value = Rc::new(
-            CacheItem {
-                value: item,
-                hash: hashcode
-            }
-        );
-
+        let value = Rc::new( CacheItem::new(item));
         for table in self.tables.iter_mut() {
             table.insert(Rc::clone(&value));
         }
@@ -161,10 +164,24 @@ where
 mod lsh_database_test {
     use super::*;
     use crate::simd::vec::SimdVecImpl;
+    use crate::simd::sse::f32x4;
     
     #[test]
-    fn test_lsh_db_insert() {
+    fn test_lsh_table_insert() {
+        let mut table = LocalitySensitiveHashTable::<SimdVecImpl<f32x4, 1>>::new(4);
+        
+        let item1 = Rc::new(
+            CacheItem::new(vec![1f32, 2f32, 3f32, 4f32].into_iter().collect::<SimdVecImpl<f32x4, 1>>())
+        );
+        let item2 = Rc::new(
+            CacheItem::new(vec![-1f32, 0f32, 0f32, -1f32].into_iter().collect::<SimdVecImpl<f32x4, 1>>())
+        );
 
+        table.insert(item1);
+        table.insert(item2);
+        
+        assert_eq!(table.table.len(), 2);
+        
     }
 }
 

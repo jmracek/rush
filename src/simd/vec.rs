@@ -50,8 +50,6 @@ impl<'a, T: SimdType, const MMBLOCKS: usize> IntoIterator for &'a SimdVecImpl<T,
     }
 }
 
-
-
 struct SimdVecImplIterator<'a, T: SimdType, const MMBLOCKS: usize> {
     obj: &'a SimdVecImpl<T, MMBLOCKS>,
     cur: usize
