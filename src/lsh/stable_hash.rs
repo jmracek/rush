@@ -4,6 +4,8 @@ use std::vec::Vec;
 
 use serde::{Serialize, Deserialize};
 
+use std::fmt::Debug;
+#[derive(Debug)]
 pub struct StableHashFunction<T> 
 where
     T: Vector<DType=f32>,
@@ -21,7 +23,6 @@ where
         let projections = (0..bits).
             map(|_| RandomProjection::<T>::new(dimension)).
             collect::<Vec<RandomProjection<T>>>();
-        
         StableHashFunction { projections }
     }
 
@@ -43,7 +44,16 @@ mod test {
     
     #[test]
     fn test_insert_to_stable_hash_table() {
-        let f = StableHashFunction::<SimdVecImpl<f32x4, 1>>::new(64, 4);
+        let f = StableHashFunction::<SimdVecImpl<f32x4, 4>>::new(64, 16);
+
+        use rand::Rng; 
+        let mut rng = rand::thread_rng();
+        let random_vector = (0..16).
+            map(|_| rng.gen_range(-1f32..1f32)).
+            collect::<SimdVecImpl<f32x4,4>>();
+
+        let norm = SimdVecImpl::<f32x4,4>::dot(&random_vector, &random_vector).sqrt();
+        let random_unit = random_vector / norm;
 
 // [4,0,0,0,0,0,128,127,0,0,128,255,0,0,128,127,0,0,128,255]
     }

@@ -58,15 +58,17 @@ struct SimdVecImplIterator<'a, T: SimdType, const MMBLOCKS: usize> {
 impl<'a, T: SimdType, const MMBLOCKS: usize> Iterator for SimdVecImplIterator<'a, T, MMBLOCKS> {
     type Item = (T, T, T, T);
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cur + 4 > MMBLOCKS {
-            None
+        let arr = &self.obj.chunks;
+        let result: Option<Self::Item>;
+        
+        if self.cur <= MMBLOCKS - 4 {
+            result = Some((arr[self.cur], arr[self.cur + 1], arr[self.cur + 2], arr[self.cur + 3]));
         }
         else {
-            let arr = &self.obj.chunks;
-            let result = (arr[self.cur], arr[self.cur + 1], arr[self.cur + 2], arr[self.cur + 3]);
-            self.cur += 4;
-            Some(result) 
+            result = None
         }
+        self.cur += 4;        
+        result
     }
 }
 

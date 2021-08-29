@@ -18,12 +18,17 @@ path = "src/main.rs"
 criterion = "0.3"
 
 [dependencies]
-rand = "0.8.0"
+atoi = "0.4.0"
+byteorder = "1.4.3"
+bytes = "1.1.0"
 itertools = "0.10.1"
 paste = "1.0.5"
-byteorder = "1.2.2"
+rand = "0.8.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1.26"
+
 
 [[bench]]
 name = "simdlib_bench"

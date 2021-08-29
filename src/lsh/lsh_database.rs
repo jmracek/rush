@@ -98,6 +98,7 @@ where
 
     pub fn insert(&mut self, item: T) {
         let value = Rc::new( CacheItem::new(item));
+        self.items.insert(Rc::clone(&value));
         for table in self.tables.iter_mut() {
             table.insert(Rc::clone(&value));
         }
@@ -168,13 +169,15 @@ mod lsh_database_test {
     
     #[test]
     fn test_lsh_table_insert() {
-        let mut table = LocalitySensitiveHashTable::<SimdVecImpl<f32x4, 1>>::new(4);
+        let mut table = LocalitySensitiveHashTable::<SimdVecImpl<f32x4, 4>>::new(16);
         
+        // These two items must necessarily hash to two separate values, 
+        // as they point in opposite directions
         let item1 = Rc::new(
-            CacheItem::new(vec![1f32, 2f32, 3f32, 4f32].into_iter().collect::<SimdVecImpl<f32x4, 1>>())
+            CacheItem::new(vec![1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
         let item2 = Rc::new(
-            CacheItem::new(vec![-1f32, 0f32, 0f32, -1f32].into_iter().collect::<SimdVecImpl<f32x4, 1>>())
+            CacheItem::new(vec![-1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
 
         table.insert(item1);
@@ -183,112 +186,67 @@ mod lsh_database_test {
         assert_eq!(table.table.len(), 2);
         
     }
-}
+    
+    #[test]
+    fn test_lsh_table_query() {
+        let mut table = LocalitySensitiveHashTable::<SimdVecImpl<f32x4, 4>>::new(16);
+        
+        // The next two items will hash to the same value because they are colinear.
+        let item1 = Rc::new(
+            CacheItem::new(vec![1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
+        );
+        let item2 = Rc::new(
+            CacheItem::new(vec![2f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
+        );
+        // This item will go to its own entry
+        let item3 = Rc::new(
+            CacheItem::new(vec![-1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
+        );
 
-/*
+        table.insert(item1);
+        table.insert(item2);
+        table.insert(item3);
 
-        let result = 
-            self.tables.
-                iter().
-                map(|table| table.query(&item)).
-                fold(None, |acc, x| {
-                    match acc {
-                        None => {
-                            match x {
-                                None => None,
-                                Some(candidate) => Some((candidate, candidate.distance(item)))
-                            }
-                        },
-                        Some((_, min_distance)) => {
-                            match x {
-                                Some(next_candidate) => {
-                                    let current_distance = next_candidate.distance(item));
-                                    if  current_distance < min_distance {
-                                        Some((next_candidate, current_distance))
-                                    }
-                                    else {
-                                        acc
-                                    }
-                                },
-                                None => acc
-                            }
-                        }
-                    }
-                });
-        match result {
-            Some((nearest_neighbour, _)) => Some(nearest_neighbour),
-            _ => None
-        }
+        let mut qtemp    = vec![1f32; 16];
+        let mut qtemp_op = vec![-1f32; 16];
+        qtemp[0] = 0.99f32;
+        qtemp_op[0] = -0.99f32;
+        let q = qtemp.into_iter().collect::<SimdVecImpl<f32x4, 4>>();
+        let q_op = qtemp_op.into_iter().collect::<SimdVecImpl<f32x4, 4>>();
 
+        let q_result = table.query_set(&q);
+        let qop_result = table.query_set(&q_op);
+        
+        // Assert there are two distinct lsh values in the table
+        assert_eq!(table.table.len(), 2);
+        // Assert the first query has a result set with two items 
+        assert_eq!(q_result.unwrap().len(), 2);
+        // Assert the second query has a result set with one item
+        assert_eq!(qop_result.unwrap().len(), 1);
+        
+    }
+    
+    #[test]
+    fn test_lshdb_query() {
+        let mut db = LocalitySensitiveHashDatabase::<SimdVecImpl<f32x4, 4>>::new(32, 16);
+        
+        // The next two items will hash to the same value because they are colinear.
+        let item1 = vec![1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>();
+        let item1_copy = vec![1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>();
+        let item2 = vec![2f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>();
+        // This item will go to its own entry
+        let item3 = vec![-1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>();
 
-TODO's:
-    1. Implement ability to load existing LocalitySensitiveHashDatabase from an existing saved model.
-    2. Implement the ability to query an LSH database
-    3. Figure out how a convenient way to implement FromIterator<T> for LSHDatabase.  The problem is
-       that in the from_iter function we would need to know the number of replicas, the dimension, and
-       the number of projections to use (bits).  
-    4. Implement the service layer for the LSH cache.
+        db.insert(item1);
+        db.insert(item2);
+        db.insert(item3);
 
+        let mut qtemp = vec![1f32; 16];
+        qtemp[0] = 0.99f32;
+        let q = qtemp.into_iter().collect::<SimdVecImpl<f32x4, 4>>();
 
-
-impl<'a, T: Euclidian> FromIterator<T> for LocalitySensitiveHashDatabase<'a, T> {
-    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
-        let mut db = LocalitySensitiveHashDatabase::<T>::new();
-        for item in iter {
-            db.insert(item);
-        }
-        db
+        let q_result = db.query(&q).unwrap();
+        
+        assert_eq!(*q_result, item1_copy);
     }
 }
-*/
-
-/*
-    pub fn query<'a>(&'a self, item: &T) -> Option<&'a T> {
-        match self.table.get(&self.hashfn.hash(item)) {
-            None => None,
-            Some(result_set) => {
-                let best_match: Option<(usize, f32)> = 
-                    result_set.
-                        iter().
-                        map(|q| T::distance(&**q, item)).
-                        enumerate().
-                        fold(None, |acc, (idx, q)| {
-                            match acc {
-                                None => Some((idx, q)),
-                                Some((min_idx, p)) => {
-                                    if q < p { Some((idx, q)) } else { Some((min_idx, p)) }
-                                }
-                            }
-                        });
-                
-                match best_match {
-                    Some((idx_closest, _)) => Some(&*result_set[idx_closest]),
-                    _ => None
-                }
-            }
-        }
-    }
-
-
-
-        let (_, candidates) = self.tables.
-            iter().
-            map(|table| table.query_set(item)).
-            fold((observed_hashes, result_set), |(mut obs, mut r), returned_results| {
-                match returned_results {
-                    Some(items) => {
-                        for v in items {
-                            let ident = v.hash();
-                            if !obs.contains(ident) {
-                                obs.insert(ident);
-                                r.push(Rc::clone(v))
-                            }
-                        }
-                        (obs, r)
-                    }
-                    _ => (obs, r)
-                }
-            });
-
-
-*/

@@ -1,43 +1,56 @@
-use rush::simd::*;
-use rush::simd::vec::SimdVecImpl;
-use rush::simd::avx::f32x8;
-use rush::simd::sse::f32x4;
-use rush::lsh::vector::Vector;
-use itertools::zip_eq;
-use std::time::{Duration, Instant};
+use std::future::Future;
+use tokio::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use rush::lsh::LocalitySensitiveHashDatabase;
+use rush::simd::SimdVecImpl;
+use rush::simd::f32x4;
+use rush::net::*;
 
-fn l2(x: &Vec<f32>, y: &Vec<f32>) -> f32 {
-    zip_eq(x.iter(), y.iter()).
-        fold(0.0, |acc, (x, y)| {
-            let delta = x - y;
-            acc + delta * delta
-        }).
-        sqrt()
+
+#[tokio::main]
+pub async fn main() -> rush::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:9090").await?;
+    run_server(listener, tokio::signal::ctrl_c()).await;
+    Ok(())
 }
 
-pub fn main() {
+async fn run_server(listener: TcpListener, shutdown: impl Future) {
     /*
-    let x = SimdVecImpl::<f32x4, 192>::new();
-    let y = SimdVecImpl::<f32x4, 192>::new();
-    */ 
-    let x = SimdVecImpl::<f32x8, 96>::new();
-    let y = SimdVecImpl::<f32x8, 96>::new();
+    let db = Arc::new(Database::new(32, 768)); 
     
-    for _ in (0..10000) {
-        x.distance(&y);
+    // Insert 10,000 random vectors
+    let mut rng = rand::thread_rng();
+    let dim = 768;
+    println!("Inserting 10,000 random vectors into LSH DB...");
+
+    for _ in 0..10_000 {
+        let random_vector = (0..dim).
+            map(|_| rng.gen_range(-1f32..1f32)).
+            collect::<T>();
+        db.insert(random_vector);
     }
 
-    let start = Instant::now();
-    let d = x.distance(&y);
-    let duration = start.elapsed();
+    println!("Database prepared!");
 
-    println!("{:?}", duration);
-    let w = vec![1f32; 768];
-    let v = vec![0f32; 768];
-    let start_l2 = Instant::now();
-    let d_l2 = l2(&w, &v);
-    let duration_l2 = start_l2.elapsed();
-    println!("{:?}", duration_l2);
-    println!("{}", d_l2);
-    println!("{}", d);
+    let (shutdown_sig, _) = broadcast::channel(1);
+ 
+    let mut server = Listener {
+        listener,
+        database: db.clone(),
+        connection_limiter: Arc::new(Semaphore::new(max_connections)),
+        shutdown: shutdown_sig 
+    };
+    
+    tokio::select! {
+        result = server.run() => {
+            if let Err(err) = result {
+                println!("Oopsie woopsie! I made a fucky-wucky");
+            }
+        }
+        _ = shutdown => { 
+            println!("Teehee! Bye bye!");
+        }
+    }
+    */
+    println!("Goodbye!");
 }
