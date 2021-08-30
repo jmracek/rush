@@ -2,9 +2,10 @@ use itertools::zip_eq;
 use std::collections::{HashSet, HashMap};
 use std::hash::{Hash, Hasher};
 use std::vec::Vec;
-use std::rc::Rc;
+use std::sync::Arc;
 use crate::lsh::vector::Vector;
 use crate::lsh::stable_hash::StableHashFunction;
+use crate::net::Database; 
 
 pub trait Cacheable {
     fn cache_id(&self) -> u128;
@@ -44,7 +45,7 @@ where
     T: Vector<DType=f32> + Cacheable,
     for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
 {
-    table: HashMap<u64, HashSet<Rc<CacheItem<T>>>>,
+    table: HashMap<u64, HashSet<Arc<CacheItem<T>>>>,
     hashfn: StableHashFunction<T>
 }
 
@@ -55,24 +56,24 @@ where
 {
     fn new(dimension: usize) -> Self {
         LocalitySensitiveHashTable {
-            table: HashMap::<u64, HashSet<Rc<CacheItem<T>>>>::new(),
+            table: HashMap::<u64, HashSet<Arc<CacheItem<T>>>>::new(),
             hashfn: StableHashFunction::<T>::new(64, dimension)
         }
     }
 
-    fn insert(&mut self, item: Rc<CacheItem<T>>) {
+    fn insert(&mut self, item: Arc<CacheItem<T>>) {
         let lsh_key = self.hashfn.hash(&item.value);
         if let Some(container) = self.table.get_mut(&lsh_key) {
-            container.insert(Rc::clone(&item));
+            container.insert(Arc::clone(&item));
         }
         else {
-            let mut value = HashSet::<Rc<CacheItem<T>>>::new();
-            value.insert(Rc::clone(&item));
+            let mut value = HashSet::<Arc<CacheItem<T>>>::new();
+            value.insert(Arc::clone(&item));
             self.table.insert(lsh_key, value);
         }
     }
 
-    fn query_set<'a>(&'a self, item: &T) -> Option<&'a HashSet<Rc<CacheItem<T>>>> {
+    fn query_set<'a>(&'a self, item: &T) -> Option<&'a HashSet<Arc<CacheItem<T>>>> {
         let key = &self.hashfn.hash(item);
         self.table.get(&key)
     }
@@ -83,38 +84,30 @@ where
     T: Vector<DType=f32> + Cacheable,
     for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
 {
-    items: HashSet<Rc<CacheItem<T>>>,
+    items: HashSet<Arc<CacheItem<T>>>,
     tables: Vec<LocalitySensitiveHashTable<T>>
 }
 
-impl<T> LocalitySensitiveHashDatabase<T> 
+impl<T> Database for LocalitySensitiveHashDatabase<T>
 where
     T: Vector<DType=f32> + Cacheable,
     for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
 {
-    pub fn len(&self) -> usize {
+    type Item = T;
+    fn len(&self) -> usize {
         self.items.len()    
     }
-
-    pub fn insert(&mut self, item: T) {
-        let value = Rc::new( CacheItem::new(item));
-        self.items.insert(Rc::clone(&value));
+    
+    fn insert(&mut self, item: T) {
+        let value = Arc::new( CacheItem::new(item));
+        self.items.insert(Arc::clone(&value));
         for table in self.tables.iter_mut() {
-            table.insert(Rc::clone(&value));
+            table.insert(Arc::clone(&value));
         }
     }
     
-    pub fn new(replicas: usize, dimension: usize) -> Self {
-        LocalitySensitiveHashDatabase {
-            items: HashSet::<Rc<CacheItem<T>>>::new(),
-            tables: (0..replicas).
-                map(|_| LocalitySensitiveHashTable::<T>::new(dimension)).
-                collect::<Vec<LocalitySensitiveHashTable<T>>>()
-        }
-    }
-    
-    pub fn query<'a>(&'a self, item: &T) -> Option<&'a T> {
-        let empty = HashSet::<Rc<CacheItem<T>>>::new();
+    fn query<'a>(&'a self, item: &T) -> Option<&'a T> {
+        let empty = HashSet::<Arc<CacheItem<T>>>::new();
         // We deduplicate the results returned from each replica before
         // computing Euclidian distances to find the nearest neighbour
         let candidates = self.tables.
@@ -126,7 +119,7 @@ where
                 }
             }).
             cloned().
-            collect::<HashSet<Rc<CacheItem<T>>>>();
+            collect::<HashSet<Arc<CacheItem<T>>>>();
         
         let maybe_nearest_neighbour = 
             candidates.
@@ -134,10 +127,10 @@ where
                 map(|x| (item.distance(&x.value), x)).
                 fold(None, |acc, (d, v)| {
                     match acc {
-                        None => Some((d, Rc::clone(v))), 
+                        None => Some((d, Arc::clone(v))), 
                         Some((min, w)) => {
                             if d < min { 
-                                Some((d, Rc::clone(v)))
+                                Some((d, Arc::clone(v)))
                             }
                             else {
                                 Some((min, w))
@@ -160,6 +153,21 @@ where
     }
 }
 
+impl<T> LocalitySensitiveHashDatabase<T> 
+where
+    T: Vector<DType=f32> + Cacheable,
+    for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
+{
+    pub fn new(replicas: usize, dimension: usize) -> Self {
+        LocalitySensitiveHashDatabase {
+            items: HashSet::<Arc<CacheItem<T>>>::new(),
+            tables: (0..replicas).
+                map(|_| LocalitySensitiveHashTable::<T>::new(dimension)).
+                collect::<Vec<LocalitySensitiveHashTable<T>>>()
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod lsh_database_test {
@@ -173,10 +181,10 @@ mod lsh_database_test {
         
         // These two items must necessarily hash to two separate values, 
         // as they point in opposite directions
-        let item1 = Rc::new(
+        let item1 = Arc::new(
             CacheItem::new(vec![1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
-        let item2 = Rc::new(
+        let item2 = Arc::new(
             CacheItem::new(vec![-1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
 
@@ -192,14 +200,14 @@ mod lsh_database_test {
         let mut table = LocalitySensitiveHashTable::<SimdVecImpl<f32x4, 4>>::new(16);
         
         // The next two items will hash to the same value because they are colinear.
-        let item1 = Rc::new(
+        let item1 = Arc::new(
             CacheItem::new(vec![1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
-        let item2 = Rc::new(
+        let item2 = Arc::new(
             CacheItem::new(vec![2f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
         // This item will go to its own entry
-        let item3 = Rc::new(
+        let item3 = Arc::new(
             CacheItem::new(vec![-1f32; 16].into_iter().collect::<SimdVecImpl<f32x4, 4>>())
         );
 

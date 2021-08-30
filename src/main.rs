@@ -1,6 +1,8 @@
 use std::future::Future;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{broadcast, Semaphore};
 use std::sync::Arc;
+use rand::Rng;
 use rush::lsh::LocalitySensitiveHashDatabase;
 use rush::simd::SimdVecImpl;
 use rush::simd::f32x4;
@@ -15,30 +17,33 @@ pub async fn main() -> rush::Result<()> {
 }
 
 async fn run_server(listener: TcpListener, shutdown: impl Future) {
-    /*
-    let db = Arc::new(Database::new(32, 768)); 
+    let mut db = LocalitySensitiveHashDatabase::new(32, 768);
     
     // Insert 10,000 random vectors
     let mut rng = rand::thread_rng();
-    let dim = 768;
-    println!("Inserting 10,000 random vectors into LSH DB...");
+    let dim = 768usize;
+    println!("Inserting 100 random vectors into LSH DB...");
 
-    for _ in 0..10_000 {
+    for _ in 0..100 {
         let random_vector = (0..dim).
             map(|_| rng.gen_range(-1f32..1f32)).
-            collect::<T>();
+            collect::<SimdVecImpl<f32x4, 192>>();
         db.insert(random_vector);
     }
+    
+    let db_ptr = Arc::new(db); 
 
     println!("Database prepared!");
+    let (notify_shutdown, _) = broadcast::channel(1);
 
-    let (shutdown_sig, _) = broadcast::channel(1);
+    //let (shutdown_sig, _) = broadcast::channel(1);
+    let max_connections = 255;
  
     let mut server = Listener {
         listener,
-        database: db.clone(),
+        database: db_ptr.clone(),
         connection_limiter: Arc::new(Semaphore::new(max_connections)),
-        shutdown: shutdown_sig 
+        shutdown_signal: notify_shutdown
     };
     
     tokio::select! {
@@ -51,6 +56,5 @@ async fn run_server(listener: TcpListener, shutdown: impl Future) {
             println!("Teehee! Bye bye!");
         }
     }
-    */
     println!("Goodbye!");
 }
