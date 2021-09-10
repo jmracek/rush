@@ -26,28 +26,6 @@ pub enum Error {
 }
 
 impl Frame {
-    pub(crate) fn array() -> Frame {
-        Frame::Array(vec![])
-    }
-
-    pub(crate) fn push_bulk(&mut self, bytes: Bytes) {
-        match self {
-            Frame::Array(vec) => {
-                vec.push(Frame::Bulk(bytes));
-            }
-            _ => panic!("not an array frame"),
-        }
-    }
-    
-    pub(crate) fn push_int(&mut self, value: u64) {
-        match self {
-            Frame::Array(vec) => {
-                vec.push(Frame::Integer(value));
-            }
-            _ => panic!("not an array frame"),
-        }
-    }
-
     pub fn check(src: &mut Cursor<&[u8]>) -> Result<(), Error> {
         match get_u8(src)? {
             b'+' => {

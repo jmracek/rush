@@ -1,9 +1,9 @@
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, Semaphore, RwLock};
 use tokio::task;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
-use crate::net::{Connection, Database, Frame, IndexedFrame, Command};
+use crate::net::{Connection, Database, Frame, Command};
 use crate::lsh::vector::Vector;
 
 enum Mode {
@@ -29,7 +29,7 @@ where
     DB::Item: Vector<DType=f32>,
     for <'a> &'a DB::Item: IntoIterator<Item=<DB::Item as Vector>::DType>
 {
-    pub(crate) database: Arc<DB>,
+    pub(crate) database: Arc<RwLock<DB>>,
     pub(crate) connection: Connection,
     pub(crate) connection_limiter: Arc<Semaphore>,
     //shutdown: ShutdownSignal,
@@ -94,18 +94,24 @@ where
                 _ => return Err("protocol error; streaming frames must be either Array or Null".into())
             };
 
-            let cmd = Command::<DB>::parse(arr)?;
+            println!("Got array frame");
 
+            let cmd = Command::<DB>::parse(arr)?;
             let db = self.database.clone();
             let txx = tx.clone();
             let id = counter; 
-
+            
+            println!("Spawning task");
             task::spawn(async move {
-                cmd.execute(id, db, txx).await;
+                match cmd.execute(id, db, txx).await {
+                    Err(_) => panic!("Error encountered while executing command. This should not have happened."),
+                    Ok(_) => {},
+                };
             });
             
             // Wait for the response we'll need to send
             if let Some(response) = rx.recv().await {
+                println!("Task response");
                 self.connection.write_frame(response.get_frame()).await?;
             }
 
@@ -136,7 +142,10 @@ where
                 let txx = tx.clone();
 
                 task::spawn(async move {
-                    cmd.execute(id, db, txx).await;
+                    match cmd.execute(id, db, txx).await {
+                        Err(_) => panic!("Error encountered while executing command. This should not have happened."),
+                        Ok(_) => {},
+                    };
                 });
             }
             

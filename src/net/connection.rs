@@ -1,6 +1,6 @@
 // This source code taken directly from https://github.com/tokio-rs/mini-redis/blob/master/src/frame.rs
 // I would have reproduced the MIT licence if they had a notice, but they did not.
-use crate::net::frame::{self, Frame};
+use crate::net::frame::Frame;
 use bytes::{Buf, BytesMut};
 use std::io::{self, Cursor};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};

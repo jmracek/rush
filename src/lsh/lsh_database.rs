@@ -1,4 +1,3 @@
-use itertools::zip_eq;
 use std::collections::{HashSet, HashMap};
 use std::hash::{Hash, Hasher};
 use std::vec::Vec;
@@ -94,16 +93,18 @@ where
     for <'a> &'a T: IntoIterator<Item=<T as Vector>::DType>
 {
     type Item = T;
+
     fn len(&self) -> usize {
         self.items.len()    
     }
     
-    fn insert(&mut self, item: T) {
+    fn insert(&mut self, item: T) -> crate::Result<()> {
         let value = Arc::new( CacheItem::new(item));
         self.items.insert(Arc::clone(&value));
         for table in self.tables.iter_mut() {
             table.insert(Arc::clone(&value));
         }
+        Ok(())
     }
     
     fn query<'a>(&'a self, item: &T) -> Option<&'a T> {

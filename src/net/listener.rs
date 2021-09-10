@@ -1,6 +1,6 @@
-use tokio::sync::{broadcast, Semaphore};
+use tokio::sync::{broadcast, Semaphore, RwLock};
 use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tracing::error;
 use crate::net::{Connection, Database, Handler};
 use crate::lsh::vector::Vector;
@@ -11,7 +11,7 @@ where
     DB::Item: Vector<DType=f32> + Sync + Send,
     for <'a> &'a DB::Item: IntoIterator<Item=<DB::Item as Vector>::DType>
 {
-    pub database: Arc<DB>,
+    pub database: Arc<RwLock<DB>>,
     pub listener: TcpListener,
     pub connection_limiter: Arc<Semaphore>,
     pub shutdown_signal: broadcast::Sender<()>,
@@ -39,6 +39,7 @@ where
 
             tokio::spawn(async move {
                 if let Err(err) = handler.run().await {
+                    println!("ERROR: {:?}", err);
                     error!(cause = ?err, "error handling connection");
                 }
             }); 

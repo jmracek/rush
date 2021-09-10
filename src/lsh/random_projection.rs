@@ -1,6 +1,6 @@
 use crate::lsh::vector::Vector;
 use std::mem::size_of;
-use std::slice;
+
 use std::fmt;
 use std::marker::PhantomData;
 use std::io::Write;
@@ -119,7 +119,7 @@ impl<'de, T> de::Visitor<'de> for RPVisitor<T> where
         let mut float_elts = Vec::<f32>::new();
         float_elts.reserve(dim);
  
-        byteorder::LittleEndian::read_f32_into_unchecked(v, float_elts.as_mut_slice());
+        byteorder::LittleEndian::read_f32_into(v, float_elts.as_mut_slice());
         let unit = float_elts.into_iter().collect::<T>();
         let norm = T::dot(&unit, &unit).sqrt();
         
@@ -147,7 +147,7 @@ impl<'de, T> de::Visitor<'de> for RPVisitor<T> where
         let dim_u32 = u32::from_le_bytes(buf);
         let dim = dim_u32 as usize;
 
-        let expected_byte_count = size_of::<<T as Vector>::DType>() * dim;
+        //let expected_byte_count = size_of::<<T as Vector>::DType>() * dim;
         let mut byte_count: usize = 0;
         
         let mut float_elts = Vec::<f32>::new();

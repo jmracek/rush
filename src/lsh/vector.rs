@@ -17,9 +17,7 @@ pub trait Vector:
     VectorArithmetic<DType=<Self as Vector>::DType> +
     FromIterator<<Self as Vector>::DType>
 where
-    for<'a> &'a Self: IntoIterator<
-        Item=<Self as Vector>::DType
-    >
+    for<'a> &'a Self: IntoIterator< Item=<Self as Vector>::DType >,
 {
     type DType;
 

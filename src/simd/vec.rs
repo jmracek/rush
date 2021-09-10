@@ -1,7 +1,7 @@
 use crate::simd::base::*;
 use crate::lsh::lsh_database::Cacheable;
 use crate::simd::sse::f32x4;
-use crate::simd::avx::f32x8;
+//use crate::simd::avx::f32x8;
 use crate::simd::murmur::murmur3_x64_128;
 use core::ops::{Add, Sub, Div, Mul, AddAssign};
 use std::iter::{IntoIterator, FromIterator, Iterator};

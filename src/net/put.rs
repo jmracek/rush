@@ -1,21 +1,20 @@
 use tokio::sync::RwLock;
-use std::mem;
 use std::sync::Arc;
 use crate::net::{Frame, IndexedFrame, Database};
-use bytes::{Bytes, BytesMut, BufMut};
+use bytes::Bytes;
 use crate::lsh::vector::Vector;
 
 
-pub(crate) struct Get<DB: Database> 
+pub(crate) struct Put<DB: Database> 
 where
     DB::Item: Vector<DType=f32>,
     for <'a> &'a DB::Item: IntoIterator<Item=<DB::Item as Vector>::DType>
 {
     dataset: String,
-    item: DB::Item
+    item: Option<DB::Item>
 }
 
-impl<DB: Database> Get<DB> 
+impl<DB: Database> Put<DB> 
 where
     DB::Item: Vector<DType=f32>,
     for <'a> &'a DB::Item: IntoIterator<Item=<DB::Item as Vector>::DType>,
@@ -23,27 +22,25 @@ where
     pub(crate) async fn execute(self, id: usize, db_ptr: Arc<RwLock<DB>>, tx: tokio::sync::mpsc::Sender<IndexedFrame>) 
         -> crate::Result<()> 
     {
-        // TODO: Check whether there is a timeout on waiting for the read() lock
-        let db = db_ptr.read().await; 
+        let item = self.item.unwrap(); 
+        // We drop the write lock ASAP to keep the the locked segment tight.
+        let mut db = db_ptr.write().await;
+        let success = db.insert(item);
+        drop(db); 
 
-        let resp = if let Some(value) = db.query(&self.item) {
-            let mut buf = BytesMut::with_capacity(mem::size_of::<f32>() * value.dimension());
-            for elt in value {
-                buf.put_f32_le(elt);
-            }
-            Frame::Bulk(Bytes::from(buf))
-        }
-        else {
-            Frame::Null()
+        let resp = match success { 
+            Ok(_) => Frame::Simple("OK".into()),
+            _ => Frame::Error("unknown error inserting to LSH database".into()),
         };
+
         tx.send(IndexedFrame::new(id, resp)).await?; 
         Ok(())
     }
 
     pub(crate) fn from_blob(dataset: String, _bytes: Bytes) -> Self {
-        Get {
+        Put {
             dataset,
-            item: DB::Item::default()
+            item: Some(DB::Item::default())
         }
     }
 }

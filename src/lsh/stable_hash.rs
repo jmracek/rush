@@ -2,10 +2,6 @@ use crate::lsh::random_projection::RandomProjection;
 use crate::lsh::vector::Vector;
 use std::vec::Vec;
 
-use serde::{Serialize, Deserialize};
-
-use std::fmt::Debug;
-#[derive(Debug)]
 pub struct StableHashFunction<T> 
 where
     T: Vector<DType=f32>,

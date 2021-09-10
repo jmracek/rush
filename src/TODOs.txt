@@ -1,0 +1,16 @@
+1) Functionality to save and load LSH databases
+    -> Here I mean save the parameters of the RPs into .rpdb format
+2) Functionality to publish to LSH database from s3, gcp, azure, etc.
+3) Functionality to load a dataset into LSH database from:
+    a) Streaming protobuf
+    b) Flatbuffers?
+    c) Avro
+    d) Parquet
+    e) Custom out-of-mem mmap'ed data?
+        - Must enable parallel loads into mem
+        - Sharding data
+4) Add better unit tests
+5) Retrieval benchmarks and optimization
+6) Ability to runtime switch between backend vector implementations depending on x86 target
+7) Simple client implementation
+8) Implement mmh for f32x8

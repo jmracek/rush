@@ -1,6 +1,6 @@
 use std::future::Future;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, Semaphore};
+use tokio::net::TcpListener;
+use tokio::sync::{broadcast, Semaphore, RwLock};
 use std::sync::Arc;
 use rand::Rng;
 use rush::lsh::LocalitySensitiveHashDatabase;
@@ -17,22 +17,25 @@ pub async fn main() -> rush::Result<()> {
 }
 
 async fn run_server(listener: TcpListener, shutdown: impl Future) {
-    let mut db = LocalitySensitiveHashDatabase::new(32, 768);
-    
+    let db_ptr = Arc::new(RwLock::new(LocalitySensitiveHashDatabase::new(32, 768)));
+    let mut db = db_ptr.write().await;
     // Insert 10,000 random vectors
     let mut rng = rand::thread_rng();
     let dim = 768usize;
-    println!("Inserting 100 random vectors into LSH DB...");
+    println!("Inserting 10_000 random vectors into LSH DB...");
 
-    for _ in 0..100 {
+    for _ in 0..10_000 {
         let random_vector = (0..dim).
             map(|_| rng.gen_range(-1f32..1f32)).
             collect::<SimdVecImpl<f32x4, 192>>();
-        db.insert(random_vector);
+        match db.insert(random_vector) {
+            Ok(_) => {},
+            Err(_) => panic!("Error encountered while inserting to LSH DB.  This shouldn't have happened"),
+        };
     }
     
-    let db_ptr = Arc::new(db); 
-
+    drop(db);
+    
     println!("Database prepared!");
     let (notify_shutdown, _) = broadcast::channel(1);
 
@@ -49,12 +52,11 @@ async fn run_server(listener: TcpListener, shutdown: impl Future) {
     tokio::select! {
         result = server.run() => {
             if let Err(err) = result {
-                println!("Oopsie woopsie! I made a fucky-wucky");
+                println!("Oopsie woopsie! I made a fucky-wucky: {}", err);
             }
         }
         _ = shutdown => { 
             println!("Teehee! Bye bye!");
         }
     }
-    println!("Goodbye!");
 }
